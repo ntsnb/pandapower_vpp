@@ -1,0 +1,270 @@
+version: 1
+project: pandapower-vpp-dso-sim
+purpose: >
+  Project-level subagent consolidation for DSO/VPP distribution-grid simulation,
+  DRL/MARL research, visualization, experiment audit, and long-term memory.
+
+model_policy:
+  preferred_model: gpt-5.5
+  preferred_reasoning_effort: xhigh
+  fallback: >
+    If a registered specialist has fixed model settings, use the fixed specialist
+    and encode this project role in the prompt.
+
+agents:
+  main_project_supervisor:
+    display_name_zh: 项目总协调官
+    file: agents/main_project_supervisor.md
+    aliases:
+      - ppvpp-architect
+    aliases_zh:
+      - 项目总协调官
+      - 总体架构协调员
+      - 阶段推进监督员
+    primary_backing_roles:
+      - workflow-orchestrator
+      - multi-agent-coordinator
+      - agent-organizer
+    fallback_roles:
+      - project-manager
+      - task-distributor
+    call_when:
+      - Multi-stage project upgrade.
+      - User asks to keep pushing until a high-implementation milestone.
+      - Algorithm, UI, experiment design, and memory updates must be coordinated.
+
+  marl_architecture_engineer:
+    display_name_zh: 强化学习算法架构师
+    file: agents/marl_architecture_engineer.md
+    aliases:
+      - ppvpp-agent-engineer
+    aliases_zh:
+      - 强化学习算法架构师
+      - MARL收敛诊断师
+      - CTDE模型工程师
+      - 深度强化学习工程师
+    primary_backing_roles:
+      - machine-learning-engineer
+      - ml-engineer
+    fallback_roles:
+      - ai-engineer
+      - data-scientist
+      - research-analyst
+    call_when:
+      - DRL/MARL/CTDE/HRL model architecture changes.
+      - Actor, critic, encoder, reward, loss, or training loop is modified.
+      - The user questions whether the model is too simple or not conference-grade.
+
+  grid_vpp_experiment_auditor:
+    display_name_zh: 实验可信度审计员
+    file: agents/grid_vpp_experiment_auditor.md
+    aliases:
+      - ppvpp-experiment-critic
+    aliases_zh:
+      - 实验可信度审计员
+      - 科研实验评审员
+      - 数据场景审计员
+    primary_backing_roles:
+      - research-analyst
+      - data-researcher
+    fallback_roles:
+      - docs-researcher
+      - competitive-analyst
+      - trend-analyst
+    call_when:
+      - Scenario, dataset, benchmark, VPP parameters, reward economics, or evaluation metrics change.
+      - A training result is interpreted as scientific evidence.
+      - The user asks whether the experiment meets academic or paper-grade standards.
+
+  power_system_modeling_auditor:
+    display_name_zh: 配电网物理建模审计员
+    file: agents/power_system_modeling_auditor.md
+    aliases:
+      - ppvpp-domain-guardian
+    aliases_zh:
+      - 配电网物理建模审计员
+      - 电力系统场景专家
+      - pandapower物理守门员
+      - DSO-VPP物理约束审计员
+    primary_backing_roles:
+      - research-analyst
+      - python-pro
+    fallback_roles:
+      - code-reviewer
+      - qa-expert
+    call_when:
+      - pandapower topology, DER mapping, VPP physical location, sign convention, FR/DOE, or runpp behavior changes.
+      - A new feeder, taiqu, IEEE/CIGRE/SimBench-style case, or DER model is added.
+      - Network constraints or safety projection are changed.
+
+  ui_visualization_sync_agent:
+    display_name_zh: 可视化同步设计师
+    file: agents/ui_visualization_sync_agent.md
+    aliases_zh:
+      - 可视化同步设计师
+      - 图示结构设计师
+      - UI可视化同步员
+      - 论文图表设计员
+    primary_backing_roles:
+      - ui-designer
+      - frontend-developer
+    fallback_roles:
+      - ui-fixer
+      - ux-researcher
+      - browser-debugger
+      - accessibility-tester
+    call_when:
+      - Any algorithm/model/scenario update needs HTML/Dash/CSV visualization sync.
+      - Text overlaps, tiny labels, unreadable charts, bilingual content, or first-person replay issues appear.
+      - The user asks for paper-style architecture diagrams or topology visualization.
+
+  memory_curator_agent:
+    display_name_zh: 项目记忆管理员
+    file: agents/memory_curator_agent.md
+    aliases:
+      - ppvpp-memory-keeper
+    aliases_zh:
+      - 项目记忆管理员
+      - 交接文档整理员
+      - 长期上下文管理员
+    primary_backing_roles:
+      - context-manager
+      - knowledge-synthesizer
+    fallback_roles:
+      - documentation-engineer
+      - technical-writer
+    call_when:
+      - A major stage completes.
+      - User expresses a durable preference, rule, criticism, or research direction.
+      - Subagents return conflicting findings and a non-redundant summary is needed.
+
+overlap_groups:
+  ui_visualization:
+    overlapping_global_agents:
+      - ui-designer
+      - frontend-developer
+      - ui-fixer
+      - ux-researcher
+      - browser-debugger
+      - accessibility-tester
+    project_resolution: ui_visualization_sync_agent
+
+  ai_ml_algorithm:
+    overlapping_global_agents:
+      - machine-learning-engineer
+      - ml-engineer
+      - ai-engineer
+      - data-scientist
+      - research-analyst
+    project_resolution: marl_architecture_engineer
+
+  research_experiment:
+    overlapping_global_agents:
+      - research-analyst
+      - data-researcher
+      - docs-researcher
+      - search-specialist
+      - trend-analyst
+      - competitive-analyst
+    project_resolution: grid_vpp_experiment_auditor
+
+  orchestration:
+    overlapping_global_agents:
+      - agent-organizer
+      - multi-agent-coordinator
+      - workflow-orchestrator
+      - task-distributor
+      - project-manager
+      - scrum-master
+    project_resolution: main_project_supervisor
+
+  memory_synthesis:
+    overlapping_global_agents:
+      - context-manager
+      - knowledge-synthesizer
+      - documentation-engineer
+      - technical-writer
+    project_resolution: memory_curator_agent
+
+  quality_review:
+    overlapping_global_agents:
+      - reviewer
+      - code-reviewer
+      - architect-reviewer
+      - qa-expert
+      - test-automator
+      - debugger
+    project_resolution: >
+      Use only when there is a concrete patch, failure, or release gate.
+      Do not use them as replacements for domain experiment audit.
+
+project_specific_toml_drafts:
+  - file: agents/ppvpp-architect.toml
+    display_name_zh: 项目总架构师
+  - file: agents/ppvpp-domain-guardian.toml
+    display_name_zh: 领域物理守门员
+  - file: agents/ppvpp-market-mechanism-engineer.toml
+    display_name_zh: 市场机制工程师
+  - file: agents/ppvpp-agent-engineer.toml
+    display_name_zh: 强化学习智能体工程师
+  - file: agents/ppvpp-simulator-engineer.toml
+    display_name_zh: 仿真器工程师
+  - file: agents/ppvpp-experiment-critic.toml
+    display_name_zh: 实验批判审计员
+  - file: agents/ppvpp-memory-keeper.toml
+    display_name_zh: 项目记忆保管员
+
+known_thread_instances:
+  - nickname: 强化学习收敛诊断线程
+    system_nickname: Boole
+    thread_id: 019e165d-1113-76c3-8120-d9274b8bd071
+    display_name_zh: 强化学习收敛诊断线程
+    maps_to_project_agent: marl_architecture_engineer
+    use_for:
+      - 强化学习不收敛诊断
+      - reward / observation / action / critic / 训练设置排查
+      - DRL/MARL 算法实现审查
+    reuse_note: 若 /subagents 中仍可见该线程，优先复用它做算法诊断。
+
+  - nickname: 配电网运行场景专家线程
+    system_nickname: Sagan
+    thread_id: 019e165d-3af3-79d1-9280-944ed29096f8
+    display_name_zh: 配电网运行场景专家线程
+    maps_to_project_agent: power_system_modeling_auditor
+    use_for:
+      - DSO/VPP/DER 物理建模审查
+      - pandapower 潮流、FR/DOE、AC 安全、反向潮流分析
+      - 配电网真实运行场景合理性判断
+    reuse_note: 若 /subagents 中仍可见该线程，优先复用它做电力系统场景审查。
+
+  - nickname: 安全包络咨询解释线程
+    system_nickname: Hume
+    thread_id: 019e167a-3459-75d3-bb23-5af8b2181e40
+    display_name_zh: 安全包络咨询解释线程
+    maps_to_project_agent: power_system_modeling_auditor
+    use_for:
+      - FR/DOE 与 AC 潮流安全概念解释
+      - 安全过滤层、projection gap、post-AC violation 的咨询说明
+    reuse_note: 本线程曾用于概念咨询；若仍可见，可复用做解释型咨询。
+
+  - nickname: 强化学习算法修复实现线程
+    system_nickname: Meitner
+    thread_id: 019e1682-a414-7d71-825a-c394671d2604
+    display_name_zh: 强化学习算法修复实现线程
+    maps_to_project_agent: marl_architecture_engineer
+    use_for:
+      - reward 尺度修复
+      - AC-aware DOE / 安全投影实现
+      - 算法相关测试与最小实现补丁
+    reuse_note: 本线程曾用于算法与安全投影代码实现；若仍可见，优先复用做算法实现。
+
+  - nickname: 图示结构可视化线程
+    system_nickname: Averroes
+    thread_id: 019e169b-8ba7-79c0-9280-dd28c77de4a2
+    display_name_zh: 图示结构可视化线程
+    maps_to_project_agent: ui_visualization_sync_agent
+    use_for:
+      - 修改前后结构图
+      - Markdown / Mermaid / HTML 图示
+      - 算法、DOE、安全投影流程可视化同步
+    reuse_note: 本线程曾用于 AC-aware DOE 对比图示；若仍可见，优先复用做可视化说明。

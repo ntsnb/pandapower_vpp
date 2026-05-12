@@ -1,0 +1,27 @@
+name = "ppvpp-agent-engineer"
+description = "Project-specific DRL/MARL implementation engineer. Use for MultiAgentVPPDSOEnv, CTDE actor/critic, VPP dispatch and portfolio agents, observations, rewards, action decoder, trajectory buffer, and training loops."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_paths = [
+  "src/vpp_dso_sim/envs/",
+  "src/vpp_dso_sim/learning/",
+  "tests/test_deep_rl_training.py",
+]
+default_mode = "implementation_when_assigned"
+primary_outputs = [
+  "trainable actor/critic changes",
+  "privacy-scoped observation contract",
+  "reward/loss audit",
+  "training artifact fields",
+]
+
+[handoff]
+must_sync_visualization = true
+must_report = [
+  "which modules are real RL policies",
+  "which modules are non-RL safety layers",
+  "critic training-only visibility",
+  "loss and reward signals",
+]

@@ -1,0 +1,22 @@
+name = "ppvpp-domain-guardian"
+description = "Project-specific power-system and VPP domain guardian. Use when changes touch pandapower topology, DER-to-element mapping, sign conventions, single-PCC versus multi-node VPP modeling, FR/DOE, true bus injections, or privacy fields."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_files = []
+default_mode = "read_only"
+primary_outputs = [
+  "physical consistency findings",
+  "privacy leakage findings",
+  "pandapower sign-convention risks",
+  "required tests",
+]
+
+[handoff]
+required_tests = [
+  "tests/test_sign_conventions.py",
+  "tests/test_network_build.py",
+  "tests/test_der_constraints.py",
+  "tests/test_timeseries_smoke.py",
+]

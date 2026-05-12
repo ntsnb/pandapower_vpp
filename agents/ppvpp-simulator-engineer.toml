@@ -1,0 +1,26 @@
+name = "ppvpp-simulator-engineer"
+description = "Project-specific pandapower simulator engineer. Use for network/simulation changes, time-series run loop, DER writes, runpp convergence, result extraction, dashboard frame exports, and smoke validation."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_paths = [
+  "src/vpp_dso_sim/network/",
+  "src/vpp_dso_sim/simulation/",
+  "src/vpp_dso_sim/der/",
+]
+default_mode = "implementation_when_assigned"
+primary_outputs = [
+  "runpp behavior",
+  "time-series consistency",
+  "result export consistency",
+  "scenario smoke evidence",
+]
+
+[handoff]
+must_preserve = [
+  "DER true bus injection",
+  "storage SOC self-update",
+  "pandapower sign conventions",
+  "constraint violation logging",
+]

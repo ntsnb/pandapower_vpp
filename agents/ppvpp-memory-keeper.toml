@@ -1,0 +1,25 @@
+name = "ppvpp-memory-keeper"
+description = "Project-specific memory keeper. Use after major design, algorithm, scenario, experiment, UI, or subagent workflow changes to update memory/*.md with decisions, preferences, pitfalls, progress, experiments, and open questions."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_paths = [
+  "memory/",
+  "agents/",
+]
+default_mode = "documentation_when_assigned"
+primary_outputs = [
+  "decision record",
+  "user preference update",
+  "pitfall record",
+  "progress summary",
+  "next open questions",
+]
+
+[handoff]
+must_not_do = [
+  "modify simulation code",
+  "modify model weights",
+  "run experiments as evidence",
+]

@@ -1,0 +1,9 @@
+profiles:
+  horizon_steps: 288
+  dt_hours: 0.25
+  load_profile:
+    kind: normalized_daily
+  pv_profile:
+    kind: bell_curve
+  price_profile:
+    kind: time_of_use

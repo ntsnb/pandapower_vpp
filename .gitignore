@@ -1,0 +1,115 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python packaging
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+wheelhouse/
+
+# Virtual environments and local package caches
+.venv/
+.venv-server/
+venv/
+env/
+ENV/
+.conda-env/
+.pip-cache/
+.cache/
+
+# Test, lint, type-check and coverage caches
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Jupyter / notebook checkpoints
+.ipynb_checkpoints/
+
+# Project experiment outputs, reports and generated artifacts
+outputs/
+logs/
+runs/
+results/
+reports/generated/
+tensorboard/
+wandb/
+mlruns/
+lightning_logs/
+
+# Model checkpoints and large training artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.pkl
+*.pickle
+*.joblib
+*.npz
+*.npy
+
+# External/raw datasets and downloaded large data
+data/external/
+data/raw/
+data/interim/
+data/processed/
+*.h5
+*.hdf5
+*.parquet
+*.feather
+
+# Local temporary directories created by tests or migration work
+tmp*/
+tmp_*/
+pytest_tmp*/
+venv_tmp/
+.git.broken_*/
+
+# Local Codex/plugin runtime state.
+# Keep the project-level agents/ directory tracked; ignore hidden runtime state.
+.agents/
+.codex/
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Logs and runtime dumps
+*.log
+*.out
+*.err
+*.pid
+*.seed
+*.stackdump
+core
+core.*
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

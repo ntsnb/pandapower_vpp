@@ -1,0 +1,22 @@
+name = "ppvpp-architect"
+description = "Project-specific architect for pandapower-vpp-dso-sim. Use for three-time-scale DSO/VPP architecture, schema boundaries, privacy-preserving CTDE/MARL structure, and staged research roadmap decisions before implementation."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_files = []
+default_mode = "read_only"
+primary_outputs = [
+  "architecture risks",
+  "module boundary decisions",
+  "subagent routing plan",
+  "required validation gates",
+]
+
+[handoff]
+must_check = [
+  "physical consistency",
+  "privacy boundary",
+  "three-time-scale DSO/VPP loop",
+  "UI and memory synchronization requirements",
+]

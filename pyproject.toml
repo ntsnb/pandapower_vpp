@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pandapower-vpp-dso-sim"
+version = "0.1.0"
+description = "Modular pandapower simulation platform for feeder-level DSO and multi-VPP coordination."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Research Engineering Team" }
+]
+dependencies = [
+  "pandapower>=2.13",
+  "numpy>=1.23",
+  "pandas>=1.5",
+  "scipy>=1.10",
+  "matplotlib>=3.7",
+  "pyyaml>=6.0",
+  "gymnasium>=0.29",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+]
+opt = [
+  "cvxpy>=1.4",
+  "networkx>=3.0",
+  "rich>=13.0",
+  "pydantic>=2.0",
+]
+viz = [
+  "networkx>=3.0",
+  "plotly>=5.20",
+  "dash>=2.16",
+]
+rl = [
+  "torch>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vpp_dso_sim = ["resources/configs/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q -p no:cacheprovider"
+filterwarnings = [
+  "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+  "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+  "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

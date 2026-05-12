@@ -1,0 +1,24 @@
+name = "ppvpp-market-mechanism-engineer"
+description = "Project-specific engineer for DSO/VPP flexibility mechanisms. Use for FR/DOE, LFP/LFB, LocalFlexNeed, VPPFlexBid, DispatchAward, clearing, settlement, penalties, fairness, and capability-image interfaces."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_paths = [
+  "src/vpp_dso_sim/optimization/",
+  "src/vpp_dso_sim/entities/",
+]
+default_mode = "implementation_when_assigned"
+primary_outputs = [
+  "mechanism design",
+  "schema changes",
+  "economic interpretation",
+  "settlement and deviation accounting gaps",
+]
+
+[handoff]
+must_preserve = [
+  "FR/DOE is hard safety envelope",
+  "LFP/LFB is local network-service economic signal",
+  "VPP private cost fields are not exposed in default mode",
+]

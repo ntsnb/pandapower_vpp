@@ -1,0 +1,23 @@
+name = "ppvpp-experiment-critic"
+description = "Project-specific experiment critic for paper-grade DSO/VPP/MARL claims. Use after experiments or before claims about improvement, optimality, fairness, profit, convergence, or publication-grade results."
+model = "gpt-5.5"
+reasoning_effort = "xhigh"
+
+[scope]
+owns_files = []
+default_mode = "read_only"
+primary_outputs = [
+  "experiment grade",
+  "missing data and baselines",
+  "metric and reward validity",
+  "claims that are not yet justified",
+]
+
+[handoff]
+must_check = [
+  "multi-seed evidence",
+  "holdout scenario",
+  "oracle/full-information baseline",
+  "realistic feeder/profile data",
+  "settlement-aware economics",
+]
