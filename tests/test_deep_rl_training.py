@@ -10,6 +10,7 @@ from vpp_dso_sim.learning.deep_rl import (
     DeepRLConfig,
     PrivacySeparatedCTDEConfig,
     _gae_returns_advantages,
+    _gae_returns_advantages_bootstrap,
     _ppo_clipped_policy_loss,
     encode_joint_action_summary,
     evaluate_privacy_separated_ctde_checkpoint,
@@ -207,6 +208,44 @@ def test_gae_and_ppo_clip_helpers_are_finite_and_clipped():
     clipped = torch.clamp(ratios, 0.80, 1.20)
     assert float(clipped.max()) == pytest.approx(1.20)
     assert float(clipped.min()) == pytest.approx(0.80)
+
+
+@pytest.mark.skipif(not torch_available(), reason="PyTorch is not installed")
+def test_gae_bootstrap_fragment_cut_uses_next_value():
+    import torch
+
+    values = torch.tensor([1.0, 2.0], dtype=torch.float32)
+    returns, advantages = _gae_returns_advantages_bootstrap(
+        rewards=[0.0, 0.0],
+        values=values,
+        next_value=torch.tensor(10.0),
+        terminals=[False, False],
+        gamma=0.5,
+        gae_lambda=1.0,
+        torch=torch,
+    )
+
+    assert torch.allclose(returns, torch.tensor([2.5, 5.0]), atol=1e-6)
+    assert torch.allclose(advantages, returns - values, atol=1e-6)
+
+
+@pytest.mark.skipif(not torch_available(), reason="PyTorch is not installed")
+def test_gae_bootstrap_true_terminal_ignores_next_value():
+    import torch
+
+    values = torch.tensor([1.0, 2.0], dtype=torch.float32)
+    returns, advantages = _gae_returns_advantages_bootstrap(
+        rewards=[0.0, 0.0],
+        values=values,
+        next_value=torch.tensor(10.0),
+        terminals=[False, True],
+        gamma=0.5,
+        gae_lambda=1.0,
+        torch=torch,
+    )
+
+    assert torch.allclose(returns, torch.tensor([0.0, 0.0]), atol=1e-6)
+    assert torch.allclose(advantages, returns - values, atol=1e-6)
 
 
 def test_vpp_dispatch_vector_splits_into_context_and_der_tokens():

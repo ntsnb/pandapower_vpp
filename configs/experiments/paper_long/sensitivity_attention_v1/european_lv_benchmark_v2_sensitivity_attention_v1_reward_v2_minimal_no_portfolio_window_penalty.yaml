@@ -1,0 +1,11 @@
+extends: configs/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal_no_portfolio_window_penalty
+
+reward:
+  vpp:
+    portfolio:
+      delivery_reliability_weight: 0.0
+      future_shield_penalty_weight: 0.0
+      future_projection_penalty_weight: 0.0
+      future_comfort_soc_weight: 0.0

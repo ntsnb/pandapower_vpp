@@ -41,12 +41,23 @@ viz = [
 rl = [
   "torch>=2.0",
 ]
+dashboard = [
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "duckdb>=0.10",
+  "pyarrow>=14",
+  "pydantic>=2.0",
+]
+
+[project.scripts]
+marl-dashboard = "marl_dashboard.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
 vpp_dso_sim = ["resources/configs/*.yaml"]
+marl_dashboard = ["frontend/dist/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

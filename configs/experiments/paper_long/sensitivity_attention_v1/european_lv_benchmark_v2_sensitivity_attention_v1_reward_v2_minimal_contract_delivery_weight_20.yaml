@@ -1,0 +1,8 @@
+extends: configs/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal_contract_delivery_weight_20
+
+reward:
+  vpp:
+    dispatch:
+      contract_delivery_weight: 20.0

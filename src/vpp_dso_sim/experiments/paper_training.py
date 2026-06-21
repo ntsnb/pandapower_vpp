@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 import hashlib
 import html
@@ -11,7 +11,11 @@ import os
 from pathlib import Path
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
+
+from vpp_dso_sim.utils.runtime import configure_numeric_thread_limits
+
+NUMERIC_THREAD_LIMITS = configure_numeric_thread_limits(default_threads=8)
 
 _BOOT_CACHE_DIR = Path(os.environ.get("VPP_DSO_BOOT_CACHE_DIR", "/tmp/pandapower_vpp_cache"))
 (_BOOT_CACHE_DIR / "matplotlib").mkdir(parents=True, exist_ok=True)
@@ -90,6 +94,16 @@ class PaperTrainingExperimentConfig:
     verbose_progress: bool = False
     ac_reference_max_candidates: int = 16
     happo_critic_use_action_summary: bool = False
+    happo_use_yaml_trainer_settings: bool = False
+    dispatch_actor_encoder_type: str = "deepset_v1"
+    happo_shared_rollout_enabled: bool = False
+    happo_shared_rollout_workers: int = 1
+    happo_shared_rollout_backend: str = "serial"
+    happo_rollout_fragment_steps: int | None = None
+    happo_reward_dynamic_reports: bool = True
+    happo_reward_dynamic_report_every_episodes: int = 1
+    happo_reward_dynamic_report_all_workers: bool = False
+    require_cuda_for_trainable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _json_ready(asdict(self))
@@ -198,6 +212,33 @@ def paper_training_preset(name: str) -> PaperTrainingExperimentConfig:
             checkpoint_selection="both",
             ac_reference_max_candidates=16,
             happo_critic_use_action_summary=True,
+            require_cuda_for_trainable=True,
+        )
+    if normalized in {"paper_long_sensitivity_v1", "paper_long_sensitivity_v1_reward_v3_1_market_safety"}:
+        return PaperTrainingExperimentConfig(
+            config_path="configs/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v3_1_market_safety.yaml",
+            output_dir="outputs/paper_training_long_sensitivity_v1",
+            preset=normalized,
+            algorithms=("rule_based", "no_flex", "ac_validated_search_reference", "happo"),
+            seeds=(9401, 9402, 9403, 9404, 9405),
+            train_variants=("train_mixed",),
+            eval_variants=("holdout_peak", "holdout_cloudy", "holdout_reverseflow"),
+            hparam_cases=("base", "lower_lr", "higher_entropy", "larger_network"),
+            horizon_steps=672,
+            eval_horizon_steps=672,
+            train_episodes=120,
+            hidden_dim=256,
+            gamma=0.995,
+            batch_size=256,
+            replay_capacity=300_000,
+            warmup_steps=2_000,
+            ppo_epochs=4,
+            checkpoint_selection="both",
+            ac_reference_max_candidates=16,
+            happo_critic_use_action_summary=True,
+            happo_use_yaml_trainer_settings=True,
+            dispatch_actor_encoder_type="set_attention_v1",
+            require_cuda_for_trainable=True,
         )
     if normalized != "paper_lite":
         raise ValueError(f"Unknown paper training preset: {name}")
@@ -394,14 +435,23 @@ def _certificate_step_frame_from_projection(projection: pd.DataFrame) -> pd.Data
             "ac_certificate_safe_rate": safe.astype(float),
             "accepted_candidate_ac_safe_rate": status.eq("accepted_candidate_ac_safe").astype(float),
             "repaired_by_ac_powerflow_backoff_rate": status.eq("repaired_by_ac_powerflow_backoff").astype(float),
+            "repaired_by_ac_powerflow_emergency_recovery_rate": status.str.startswith(
+                "repaired_by_ac_powerflow_emergency_recovery"
+            ).astype(float),
             "rolled_back_to_current_safe_dispatch_rate": status.eq("rolled_back_to_current_safe_dispatch").astype(float),
             "certificate_failed_current_dispatch_insecure_rate": status.eq(
                 "certificate_failed_current_dispatch_insecure"
+            ).astype(float),
+            "certificate_failed_no_ac_safe_recovery_rate": status.eq(
+                "certificate_failed_no_ac_safe_recovery"
             ).astype(float),
             "mean_ac_certificate_accepted_alpha": accepted_alpha.astype(float),
             "mean_ac_certified_projection_gap_mw": gap.astype(float),
             "ac_certificate_backoff_count": status.isin(
                 {"repaired_by_ac_powerflow_backoff", "rolled_back_to_current_safe_dispatch"}
+            ).astype(float)
+            + status.str.startswith(
+                "repaired_by_ac_powerflow_emergency_recovery"
             ).astype(float),
         }
     )
@@ -415,8 +465,10 @@ def _certificate_summary_from_projection(projection: pd.DataFrame) -> dict[str, 
             "ac_certificate_safe_rate": 0.0,
             "accepted_candidate_ac_safe_rate": 0.0,
             "repaired_by_ac_powerflow_backoff_rate": 0.0,
+            "repaired_by_ac_powerflow_emergency_recovery_rate": 0.0,
             "rolled_back_to_current_safe_dispatch_rate": 0.0,
             "certificate_failed_current_dispatch_insecure_rate": 0.0,
+            "certificate_failed_no_ac_safe_recovery_rate": 0.0,
             "mean_ac_certificate_accepted_alpha": 0.0,
             "mean_ac_certified_projection_gap_mw": 0.0,
             "ac_certificate_backoff_count": 0,
@@ -439,9 +491,15 @@ def _certificate_summary_from_projection(projection: pd.DataFrame) -> dict[str, 
         "ac_certificate_safe_rate": mean_or_zero("ac_certificate_safe_rate"),
         "accepted_candidate_ac_safe_rate": mean_or_zero("accepted_candidate_ac_safe_rate"),
         "repaired_by_ac_powerflow_backoff_rate": mean_or_zero("repaired_by_ac_powerflow_backoff_rate"),
+        "repaired_by_ac_powerflow_emergency_recovery_rate": mean_or_zero(
+            "repaired_by_ac_powerflow_emergency_recovery_rate"
+        ),
         "rolled_back_to_current_safe_dispatch_rate": mean_or_zero("rolled_back_to_current_safe_dispatch_rate"),
         "certificate_failed_current_dispatch_insecure_rate": mean_or_zero(
             "certificate_failed_current_dispatch_insecure_rate"
+        ),
+        "certificate_failed_no_ac_safe_recovery_rate": mean_or_zero(
+            "certificate_failed_no_ac_safe_recovery_rate"
         ),
         "mean_ac_certificate_accepted_alpha": mean_or_zero("mean_ac_certificate_accepted_alpha"),
         "mean_ac_certified_projection_gap_mw": mean_or_zero("mean_ac_certified_projection_gap_mw"),
@@ -540,8 +598,47 @@ def _append_progress_event(output_dir: Path, event: dict[str, Any]) -> None:
         "train_episodes",
         "run_count",
         "eval_rows",
+        "profile_seed",
+        "episode",
+        "episode_progress_pct",
+        "step",
+        "global_step",
+        "step_progress_pct",
+        "gradient_step",
+        "worker_index",
+        "worker_count",
+        "worker_start_step",
+        "local_step",
+        "fragment_steps",
+        "policy_version",
+        "reward_so_far",
+        "episode_reward",
+        "total_cost_so_far",
+        "episode_cost",
+        "violations_so_far",
+        "violation_count",
+        "projection_gap_mw",
+        "critic_loss",
+        "critic_grad_norm",
+        "dso_policy_loss",
+        "dispatch_policy_loss",
+        "portfolio_policy_loss",
     ]
     row = {column: payload.get(column, "") for column in columns}
+    expected_header = ",".join(columns)
+    if csv_path.exists():
+        with csv_path.open("r", encoding="utf-8") as f:
+            current_header = f.readline().strip()
+        if current_header != expected_header:
+            rows = []
+            with jsonl_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    rows.append({column: item.get(column, "") for column in columns})
+            pd.DataFrame(rows, columns=columns).to_csv(csv_path, index=False)
+            return
     pd.DataFrame([row], columns=columns).to_csv(
         csv_path,
         mode="a",
@@ -908,31 +1005,62 @@ def _run_baseline_rollout(
     experiment_level: str,
     reuse_existing: bool = False,
     ac_reference_max_candidates: int = 16,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    progress_step_interval: int = 24,
 ) -> dict[str, Any]:
     scenario = load_scenario(config_path)
     simulator = Simulator(scenario)
     existing_results_dir = output_dir / "simulator_results"
+    step_interval = max(1, int(progress_step_interval))
+
+    def maybe_report_step(step_index: int) -> None:
+        completed = int(step_index) + 1
+        if progress_callback is None:
+            return
+        if completed < int(horizon_steps) and completed % step_interval != 0:
+            return
+        progress_callback(
+            {
+                "phase": "baseline_step",
+                "message": "baseline step progress",
+                "step": completed,
+                "horizon_steps": int(horizon_steps),
+                "step_progress_pct": float(completed / max(1, int(horizon_steps))),
+            }
+        )
+
     if reuse_existing and (existing_results_dir / "summary.json").exists():
         results = {
             path.stem: pd.read_csv(path, low_memory=False)
             for path in existing_results_dir.glob("*.csv")
         }
     elif algorithm == "rule_based":
-        results = simulator.run_timeseries(horizon_steps=horizon_steps)
+        simulator.reset()
+        for step in range(horizon_steps):
+            simulator.step(step)
+            maybe_report_step(step)
+        results = simulator.collect_results()
     else:
         simulator.reset()
         ac_search_rows: list[dict[str, Any]] = []
+        if algorithm == "ac_validated_search_reference":
+
+            def ac_reference_action_factory(**kwargs: Any) -> dict[str, dict[str, Any]]:
+                current_step = int(kwargs["step"])
+                current_price = float(kwargs["price"])
+                reference = build_ac_validated_search_actions(
+                    scenario,
+                    current_step,
+                    current_price,
+                    max_candidates=int(ac_reference_max_candidates),
+                )
+                ac_search_rows.append({"step": current_step, **reference.metadata})
+                return reference.actions
+
         for step in range(horizon_steps):
             price = float(scenario.price_profile[step % len(scenario.price_profile)])
             if algorithm == "ac_validated_search_reference":
-                reference = build_ac_validated_search_actions(
-                    scenario,
-                    step,
-                    price,
-                    max_candidates=int(ac_reference_max_candidates),
-                )
-                actions = reference.actions
-                ac_search_rows.append({"step": int(step), **reference.metadata})
+                actions = ac_reference_action_factory
             else:
                 actions = {}
                 for vpp in scenario.vpps:
@@ -943,12 +1071,18 @@ def _run_baseline_rollout(
                         "action_mode": mode,
                     }
             simulator.step(actions=actions)
+            maybe_report_step(step)
         results = simulator.collect_results()
         if ac_search_rows:
             results["ac_validated_search_metadata"] = pd.DataFrame(ac_search_rows)
 
     if not reuse_existing or not (existing_results_dir / "summary.json").exists():
         simulator.export_results(output_dir / "simulator_results")
+        if "ac_validated_search_metadata" in results:
+            results["ac_validated_search_metadata"].to_csv(
+                output_dir / "simulator_results" / "ac_validated_search_metadata.csv",
+                index=False,
+            )
         _build_step_summary(results).to_csv(output_dir / "step_summary.csv", index=False)
     plan = BenchmarkRunPlan(
         algorithm=algorithm,
@@ -983,6 +1117,39 @@ def _case_overrides(case: str) -> dict[str, float | int]:
     if case == "larger_network":
         return {"hidden_dim_multiplier": 2}
     return {"learning_rate_multiplier": 1.0}
+
+
+def _is_paper_long_family(cfg: PaperTrainingExperimentConfig) -> bool:
+    return str(cfg.preset).replace("-", "_").startswith("paper_long")
+
+
+def _validate_trainable_cuda_requirement(
+    cfg: PaperTrainingExperimentConfig,
+    *,
+    algorithm: str,
+    cuda_available: bool | None = None,
+) -> None:
+    if not bool(cfg.require_cuda_for_trainable):
+        return
+    if cuda_available is None:
+        try:
+            import torch
+
+            cuda_available = bool(torch.cuda.is_available())
+            if cuda_available:
+                try:
+                    torch.empty(1, device="cuda").cpu()
+                except Exception:
+                    cuda_available = False
+        except Exception:
+            cuda_available = False
+    if not bool(cuda_available):
+        raise RuntimeError(
+            "CUDA is required for this paper-long trainable experiment but PyTorch cannot use a CUDA device. "
+            f"algorithm={algorithm}, preset={cfg.preset}, output_dir={cfg.output_dir}. "
+            "Fix the NVIDIA driver/device-node permissions or disable require_cuda_for_trainable only for "
+            "explicit CPU debugging runs."
+        )
 
 
 def _algorithm_label(algorithm: str) -> str:
@@ -1054,7 +1221,10 @@ def _train_algorithm(
     seed: int,
     case: str,
     eval_horizon_steps: int,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    progress_step_interval: int = 24,
 ) -> dict[str, Any]:
+    _validate_trainable_cuda_requirement(cfg, algorithm=algorithm)
     overrides = _case_overrides(case)
     hidden_dim = int(cfg.hidden_dim * int(overrides.get("hidden_dim_multiplier", 1)))
     lr = float(cfg.learning_rate) * float(overrides.get("learning_rate_multiplier", 1.0))
@@ -1064,25 +1234,56 @@ def _train_algorithm(
     if algorithm == "happo":
         from vpp_dso_sim.learning.advanced_marl import (
             HAPPOConfig,
+            _happo_config_from_yaml,
             evaluate_happo_checkpoint,
             train_happo,
         )
 
+        happo_config = (
+            _happo_config_from_yaml(train_config_path)
+            if bool(cfg.happo_use_yaml_trainer_settings)
+            else HAPPOConfig()
+        )
+        happo_config = replace(
+            happo_config,
+            episodes=int(cfg.train_episodes),
+            horizon_steps=int(cfg.horizon_steps),
+            gamma=float(cfg.gamma),
+            hidden_dim=hidden_dim,
+            actor_learning_rate=lr,
+            critic_learning_rate=lr,
+            ppo_epochs=int(cfg.ppo_epochs),
+            entropy_coef=float(overrides.get("entropy_coef", happo_config.entropy_coef)),
+            critic_use_action_summary=bool(
+                cfg.happo_critic_use_action_summary or happo_config.critic_use_action_summary
+            ),
+            dispatch_actor_encoder_type=str(
+                overrides.get(
+                    "dispatch_actor_encoder_type",
+                    happo_config.dispatch_actor_encoder_type
+                    if happo_config.dispatch_actor_encoder_type != "deepset_v1"
+                    else cfg.dispatch_actor_encoder_type,
+                )
+            ),
+            shared_rollout_enabled=bool(cfg.happo_shared_rollout_enabled),
+            shared_rollout_workers=int(cfg.happo_shared_rollout_workers),
+            shared_rollout_backend=str(cfg.happo_shared_rollout_backend),
+            rollout_fragment_steps=(
+                None
+                if cfg.happo_rollout_fragment_steps is None
+                else int(cfg.happo_rollout_fragment_steps)
+            ),
+            reward_dynamic_reports=bool(cfg.happo_reward_dynamic_reports),
+            reward_dynamic_report_every_episodes=int(cfg.happo_reward_dynamic_report_every_episodes),
+            reward_dynamic_report_all_workers=bool(cfg.happo_reward_dynamic_report_all_workers),
+            seed=int(seed),
+        )
         train = train_happo(
             config_path=train_config_path,
             output_dir=train_out,
-            config=HAPPOConfig(
-                episodes=int(cfg.train_episodes),
-                horizon_steps=int(cfg.horizon_steps),
-                gamma=float(cfg.gamma),
-                hidden_dim=hidden_dim,
-                actor_learning_rate=lr,
-                critic_learning_rate=lr,
-                ppo_epochs=int(cfg.ppo_epochs),
-                entropy_coef=float(overrides.get("entropy_coef", 0.01)),
-                critic_use_action_summary=bool(cfg.happo_critic_use_action_summary),
-                seed=int(seed),
-            ),
+            config=happo_config,
+            progress_callback=progress_callback,
+            progress_step_interval=progress_step_interval,
         )
         eval_result = None
         if run_initial_eval:
@@ -1107,6 +1308,9 @@ def _train_algorithm(
                 hidden_dim=hidden_dim,
                 value_learning_rate=lr,
                 entropy_coef=float(overrides.get("entropy_coef", 0.0)),
+                dispatch_actor_encoder_type=str(
+                    overrides.get("dispatch_actor_encoder_type", cfg.dispatch_actor_encoder_type)
+                ),
                 seed=int(seed),
             ),
         )
@@ -1137,6 +1341,9 @@ def _train_algorithm(
                 replay_capacity=int(cfg.replay_capacity),
                 warmup_steps=int(cfg.warmup_steps),
                 exploration_noise=float(overrides.get("exploration_noise", 0.15)),
+                dispatch_actor_encoder_type=str(
+                    overrides.get("dispatch_actor_encoder_type", cfg.dispatch_actor_encoder_type)
+                ),
                 seed=int(seed),
             ),
         )
@@ -1174,6 +1381,9 @@ def _train_algorithm(
                 target_entropy_multiplier=float(overrides.get("hasac_target_entropy_multiplier", 1.0)),
                 init_log_alpha_dso=float(overrides.get("hasac_init_log_alpha", -4.0)),
                 init_log_alpha_dispatch=float(overrides.get("hasac_init_log_alpha", -4.0)),
+                dispatch_actor_encoder_type=str(
+                    overrides.get("dispatch_actor_encoder_type", cfg.dispatch_actor_encoder_type)
+                ),
                 seed=int(seed),
             ),
         )
@@ -1300,8 +1510,10 @@ def _step_metric_summary(
             "ac_certificate_safe_rate": 0.0,
             "accepted_candidate_ac_safe_rate": 0.0,
             "repaired_by_ac_powerflow_backoff_rate": 0.0,
+            "repaired_by_ac_powerflow_emergency_recovery_rate": 0.0,
             "rolled_back_to_current_safe_dispatch_rate": 0.0,
             "certificate_failed_current_dispatch_insecure_rate": 0.0,
+            "certificate_failed_no_ac_safe_recovery_rate": 0.0,
             "mean_ac_certificate_accepted_alpha": 0.0,
             **profile_fields,
         }
@@ -1365,10 +1577,14 @@ def _step_metric_summary(
         "ac_certificate_safe_rate": col_mean("ac_certificate_safe_rate"),
         "accepted_candidate_ac_safe_rate": col_mean("accepted_candidate_ac_safe_rate"),
         "repaired_by_ac_powerflow_backoff_rate": col_mean("repaired_by_ac_powerflow_backoff_rate"),
+        "repaired_by_ac_powerflow_emergency_recovery_rate": col_mean(
+            "repaired_by_ac_powerflow_emergency_recovery_rate"
+        ),
         "rolled_back_to_current_safe_dispatch_rate": col_mean("rolled_back_to_current_safe_dispatch_rate"),
         "certificate_failed_current_dispatch_insecure_rate": col_mean(
             "certificate_failed_current_dispatch_insecure_rate"
         ),
+        "certificate_failed_no_ac_safe_recovery_rate": col_mean("certificate_failed_no_ac_safe_recovery_rate"),
         "mean_ac_certificate_accepted_alpha": col_mean("mean_ac_certificate_accepted_alpha"),
         "security_pass": int(col_sum("violation_count") == 0),
         **profile_fields,
@@ -1817,7 +2033,7 @@ def _guard_output_protocol(output_dir: Path, cfg: PaperTrainingExperimentConfig)
                 f"Output directory {output_dir} has an incompatible manifest schema. "
                 "Disable --resume-completed or use a fresh output directory."
             )
-    if str(cfg.preset) == "paper_long" and not bool(cfg.resume_completed):
+    if _is_paper_long_family(cfg) and not bool(cfg.resume_completed):
         allowed_preflight = {".cache", "logs"}
         existing = [child.name for child in output_dir.iterdir() if child.name not in allowed_preflight]
         if existing:
@@ -2033,6 +2249,216 @@ def _architecture_diagnostics(
     return pd.DataFrame(rows)
 
 
+def _baseline_safety_gate_diagnostics(
+    *,
+    cfg: PaperTrainingExperimentConfig,
+    evaluation_seed_metrics: pd.DataFrame,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if "ac_validated_search_reference" not in set(cfg.algorithms):
+        return pd.DataFrame(rows)
+
+    def add(
+        *,
+        severity: str,
+        check_id: str,
+        finding: str,
+        finding_zh: str,
+        recommendation: str,
+        status: str,
+        block_execution: bool,
+    ) -> None:
+        rows.append(
+            {
+                "severity": severity,
+                "check_id": check_id,
+                "component": "baseline_safety_gate",
+                "finding": finding,
+                "finding_zh": finding_zh,
+                "recommendation": recommendation,
+                "status": status,
+                "block_execution": bool(block_execution),
+            }
+        )
+
+    if evaluation_seed_metrics.empty or "algorithm" not in evaluation_seed_metrics:
+        add(
+            severity="high",
+            check_id="ac_reference_missing",
+            finding="No evaluation rows are available for the AC-validated reference baseline.",
+            finding_zh="没有可用于 AC 校验参考基线的评估行。",
+            recommendation="Complete baseline rollouts before launching paper-long RL training.",
+            status="blocked",
+            block_execution=True,
+        )
+        return pd.DataFrame(rows)
+
+    ac_rows = evaluation_seed_metrics[
+        evaluation_seed_metrics["algorithm"].astype(str).eq("ac_validated_search_reference")
+    ]
+    if ac_rows.empty:
+        add(
+            severity="high",
+            check_id="ac_reference_missing",
+            finding="ac_validated_search_reference is configured but no completed baseline rows were found.",
+            finding_zh="配置中包含 ac_validated_search_reference，但没有找到已完成的基线结果行。",
+            recommendation="Run the AC reference baseline for every evaluation variant and seed before RL training.",
+            status="blocked",
+            block_execution=True,
+        )
+        return pd.DataFrame(rows)
+
+    def max_numeric(column: str) -> float:
+        if column not in ac_rows:
+            return 0.0
+        values = pd.to_numeric(ac_rows[column], errors="coerce").fillna(0.0)
+        return float(values.max()) if not values.empty else 0.0
+
+    def sum_numeric(column: str) -> float:
+        if column not in ac_rows:
+            return 0.0
+        values = pd.to_numeric(ac_rows[column], errors="coerce").fillna(0.0)
+        return float(values.sum()) if not values.empty else 0.0
+
+    violation_total = max(sum_numeric("total_violation_cells"), sum_numeric("post_ac_violation_count"))
+    powerflow_failures = sum_numeric("post_ac_powerflow_failed")
+    if violation_total > 0.0 or powerflow_failures > 0.0:
+        add(
+            severity="high",
+            check_id="ac_reference_post_ac_unsafe",
+            finding=(
+                "ac_validated_search_reference produced post-AC violations or power-flow failures "
+                f"(violations={violation_total:.0f}, powerflow_failures={powerflow_failures:.0f})."
+            ),
+            finding_zh=(
+                "ac_validated_search_reference 出现 post-AC 越限或潮流失败 "
+                f"(越限={violation_total:.0f}, 潮流失败={powerflow_failures:.0f})。"
+            ),
+            recommendation=(
+                "Do not enter paper-long RL training until the AC reference baseline is safe on all "
+                "evaluation variants and seeds."
+            ),
+            status="blocked",
+            block_execution=True,
+        )
+
+    fallback_steps = sum_numeric("fallback_to_current_dispatch_step_count")
+    current_insecure_rate = max_numeric("certificate_failed_current_dispatch_insecure_rate")
+    no_safe_recovery_rate = max_numeric("certificate_failed_no_ac_safe_recovery_rate")
+    if fallback_steps > 0.0 or current_insecure_rate > 0.0 or no_safe_recovery_rate > 0.0:
+        add(
+            severity="high",
+            check_id="ac_reference_certificate_hard_failures",
+            finding=(
+                "AC reference certification had hard failures "
+                f"(fallback_steps={fallback_steps:.0f}, current_insecure_rate={current_insecure_rate:.3f}, "
+                f"no_safe_recovery_rate={no_safe_recovery_rate:.3f})."
+            ),
+            finding_zh=(
+                "AC 参考基线存在证书硬失败 "
+                f"(回退步数={fallback_steps:.0f}, current 不安全率={current_insecure_rate:.3f}, "
+                f"无安全恢复率={no_safe_recovery_rate:.3f})。"
+            ),
+            recommendation=(
+                "Fix the emergency recovery/reference search path before using this baseline in paper-long "
+                "comparisons."
+            ),
+            status="blocked",
+            block_execution=True,
+        )
+
+    if "is_ac_validated" in ac_rows:
+        validated = ac_rows["is_ac_validated"].map(lambda value: bool(value) if pd.notna(value) else False)
+        if not bool(validated.all()):
+            add(
+                severity="high",
+                check_id="ac_reference_not_validated_every_seed",
+                finding="At least one AC reference baseline row is not marked AC-validated.",
+                finding_zh="至少一个 AC 参考基线结果行没有被标记为 AC 校验通过。",
+                recommendation="Require every AC reference seed/variant to have feasible candidates and no unsafe fallback.",
+                status="blocked",
+                block_execution=True,
+            )
+
+    if not rows:
+        add(
+            severity="info",
+            check_id="ac_reference_baseline_gate_passed",
+            finding="AC reference baseline passed post-AC safety and certification checks.",
+            finding_zh="AC 参考基线通过了 post-AC 安全性和证书检查。",
+            recommendation="Proceed to trainable RL algorithms; keep reporting certificate and post-AC statistics.",
+            status="passed",
+            block_execution=False,
+        )
+    return pd.DataFrame(rows)
+
+
+def _write_baseline_phase_artifacts(
+    *,
+    output_dir: Path,
+    cfg: PaperTrainingExperimentConfig,
+    run_rows: list[dict[str, Any]],
+    seed_rows: list[dict[str, Any]],
+    eval_rows: list[dict[str, Any]],
+    profile_rows: list[dict[str, Any]],
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    run_index = pd.DataFrame(run_rows)
+    seed_metrics = pd.DataFrame(seed_rows)
+    evaluation_seed_metrics = pd.DataFrame(eval_rows)
+    profile_quality = pd.DataFrame(profile_rows)
+    aggregate_metrics = _aggregate_eval_metrics(evaluation_seed_metrics)
+    baseline_comparison = _baseline_comparison(evaluation_seed_metrics)
+    diagnostics = _architecture_diagnostics(cfg=cfg, evaluation_seed_metrics=evaluation_seed_metrics, run_index=run_index)
+    baseline_gate = _baseline_safety_gate_diagnostics(cfg=cfg, evaluation_seed_metrics=evaluation_seed_metrics)
+    if not baseline_gate.empty:
+        diagnostics = pd.concat([diagnostics, baseline_gate], ignore_index=True, sort=False)
+    claim_guardrails, claim_readiness = _claim_guardrails(
+        cfg=cfg,
+        evaluation_seed_metrics=evaluation_seed_metrics,
+        diagnostics=diagnostics,
+    )
+    blockers = (
+        baseline_gate["block_execution"].fillna(False).map(bool)
+        if not baseline_gate.empty and "block_execution" in baseline_gate
+        else pd.Series(dtype=bool)
+    )
+    if bool(blockers.any()):
+        claim_readiness = {
+            **claim_readiness,
+            "execution_ready": False,
+            "summary": "Baseline safety gate failed; paper-long RL training should not start from this baseline set.",
+        }
+
+    run_index.to_csv(output_dir / "baseline_run_index.csv", index=False)
+    seed_metrics.to_csv(output_dir / "baseline_seed_metrics.csv", index=False)
+    evaluation_seed_metrics.to_csv(output_dir / "baseline_evaluation_seed_metrics.csv", index=False)
+    aggregate_metrics.to_csv(output_dir / "baseline_aggregate_metrics.csv", index=False)
+    baseline_comparison.to_csv(output_dir / "baseline_comparison.csv", index=False)
+    profile_quality.to_csv(output_dir / "baseline_profile_quality.csv", index=False)
+    diagnostics.to_csv(output_dir / "baseline_architecture_diagnostics.csv", index=False)
+    claim_guardrails.to_csv(output_dir / "baseline_claim_guardrails.csv", index=False)
+    baseline_gate.to_csv(output_dir / "baseline_safety_gate.csv", index=False)
+    write_json(output_dir / "baseline_claim_readiness.json", _make_json_safe(claim_readiness))
+
+    manifest = {
+        "schema_version": "paper_training_v1",
+        "phase": "baseline_complete",
+        "config": cfg.to_dict(),
+        "runtime": _runtime_versions(),
+        "source_config_hash": _file_sha256(cfg.config_path),
+        "artifacts": {
+            "baseline_run_index": str(output_dir / "baseline_run_index.csv"),
+            "baseline_seed_metrics": str(output_dir / "baseline_seed_metrics.csv"),
+            "baseline_evaluation_seed_metrics": str(output_dir / "baseline_evaluation_seed_metrics.csv"),
+            "baseline_safety_gate": str(output_dir / "baseline_safety_gate.csv"),
+            "baseline_claim_guardrails": str(output_dir / "baseline_claim_guardrails.csv"),
+            "baseline_claim_readiness": str(output_dir / "baseline_claim_readiness.json"),
+        },
+    }
+    write_json(output_dir / "experiment_manifest.json", _make_json_safe(manifest))
+    return baseline_gate, diagnostics, claim_readiness
+
+
 def _write_long_training_report(
     *,
     output_dir: Path,
@@ -2207,6 +2633,8 @@ setLang(lang);
 
 def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None = None) -> dict[str, Any]:
     cfg = config or PaperTrainingExperimentConfig()
+    if _is_paper_long_family(cfg) and not bool(cfg.require_cuda_for_trainable):
+        cfg = replace(cfg, require_cuda_for_trainable=True)
     out = ensure_dir(cfg.output_dir)
     _guard_output_protocol(out, cfg)
     _configure_local_plot_cache(out)
@@ -2306,6 +2734,19 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
                     },
                     print_event=bool(cfg.verbose_progress),
                 )
+
+                def baseline_progress_callback(event: dict[str, Any]) -> None:
+                    progress_event = {
+                        **event,
+                        "run_id": baseline_run_id,
+                        "algorithm": algorithm,
+                        "seed": int(seed),
+                        "profile_variant": variant,
+                    }
+                    _print_progress(out, progress_event, print_event=False)
+                    progress_state["latest"] = progress_event
+                    _emit_progress_summary(out, progress_state)
+
                 baseline = _run_baseline_rollout(
                     algorithm=algorithm,
                     config_path=config_path,
@@ -2318,6 +2759,8 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
                     experiment_level=cfg.preset,
                     reuse_existing=bool(cfg.resume_completed),
                     ac_reference_max_candidates=int(cfg.ac_reference_max_candidates),
+                    progress_callback=baseline_progress_callback,
+                    progress_step_interval=6,
                 )
                 _print_progress(
                     out,
@@ -2380,6 +2823,46 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
                     }
                 )
 
+    baseline_gate, _, _ = _write_baseline_phase_artifacts(
+        output_dir=out,
+        cfg=cfg,
+        run_rows=run_rows,
+        seed_rows=seed_rows,
+        eval_rows=eval_rows,
+        profile_rows=profile_rows,
+    )
+    baseline_blocked = (
+        not baseline_gate.empty
+        and "block_execution" in baseline_gate
+        and bool(baseline_gate["block_execution"].fillna(False).map(bool).any())
+    )
+    if baseline_blocked and _is_paper_long_family(cfg):
+        blocking = baseline_gate[baseline_gate["block_execution"].fillna(False).map(bool)]
+        blocking_ids = ",".join(blocking["check_id"].astype(str).tolist())
+        _print_progress(
+            out,
+            {
+                "phase": "baseline_gate_failed",
+                "message": "paper-long training stopped before RL because baseline safety gate failed",
+                "run_id": "baseline_safety_gate",
+                "hparam_case": "baseline",
+                "violations": int(
+                    pd.to_numeric(
+                        pd.DataFrame(eval_rows).get("total_violation_cells", pd.Series(dtype=float)),
+                        errors="coerce",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+            },
+            print_event=True,
+        )
+        _close_tqdm_bars(progress_state)
+        raise RuntimeError(
+            "Baseline safety gate failed before paper-long RL training. "
+            f"Blocking checks: {blocking_ids}. See {out / 'baseline_safety_gate.csv'}."
+        )
+
     for seed in cfg.seeds:
         for train_variant in cfg.train_variants:
             train_profile_id = f"train_{train_variant}_seed_{seed}"
@@ -2422,6 +2905,20 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
                             },
                             print_event=bool(cfg.verbose_progress),
                         )
+
+                        def train_progress_callback(event: dict[str, Any]) -> None:
+                            progress_event = {
+                                **event,
+                                "run_id": train_run_id,
+                                "algorithm": algorithm,
+                                "seed": int(seed),
+                                "hparam_case": case,
+                                "train_variant": train_variant,
+                            }
+                            _print_progress(out, progress_event, print_event=False)
+                            progress_state["latest"] = progress_event
+                            _emit_progress_summary(out, progress_state)
+
                         trained = _train_algorithm(
                             algorithm=algorithm,
                             cfg=cfg,
@@ -2431,6 +2928,8 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
                             seed=int(seed),
                             case=case,
                             eval_horizon_steps=eval_horizon,
+                            progress_callback=train_progress_callback,
+                            progress_step_interval=24,
                         )
                         train = trained["train"]
                         first_eval_result = trained["eval"]
@@ -2742,6 +3241,9 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
     baseline_comparison = _baseline_comparison(evaluation_seed_metrics)
     convergence_summary = _convergence_summary(episode_metrics, loss_metrics)
     diagnostics = _architecture_diagnostics(cfg=cfg, evaluation_seed_metrics=evaluation_seed_metrics, run_index=run_index)
+    baseline_gate = _baseline_safety_gate_diagnostics(cfg=cfg, evaluation_seed_metrics=evaluation_seed_metrics)
+    if not baseline_gate.empty:
+        diagnostics = pd.concat([diagnostics, baseline_gate], ignore_index=True, sort=False)
     claim_guardrails, claim_readiness = _claim_guardrails(
         cfg=cfg,
         evaluation_seed_metrics=evaluation_seed_metrics,
@@ -2775,6 +3277,7 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
             "loss_metrics": str(out / "training_loss_metrics.csv"),
             "profile_quality": str(out / "profile_quality.csv"),
             "diagnostics": str(out / "architecture_diagnostics.csv"),
+            "baseline_safety_gate": str(out / "baseline_safety_gate.csv"),
             "claim_guardrails": str(out / "claim_guardrails.csv"),
             "claim_readiness": str(out / "claim_readiness.json"),
             "tensorboard_assets": str(out / "tensorboard_assets.csv"),
@@ -2847,6 +3350,7 @@ def run_paper_training_experiment(config: PaperTrainingExperimentConfig | None =
         "loss_metrics": loss_metrics,
         "profile_quality": profile_quality,
         "diagnostics": diagnostics,
+        "baseline_safety_gate": baseline_gate,
         "claim_guardrails": claim_guardrails,
         "claim_readiness": claim_readiness,
         "image_index": image_index,

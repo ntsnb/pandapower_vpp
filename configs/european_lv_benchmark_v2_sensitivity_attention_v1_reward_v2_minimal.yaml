@@ -1,0 +1,3 @@
+# Compatibility wrapper. Canonical file:
+# configs/experiments/paper_long/sensitivity_attention_v1/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml
+extends: configs/experiments/paper_long/sensitivity_attention_v1/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml

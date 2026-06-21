@@ -1,0 +1,68 @@
+extends: configs/european_lv_benchmark_v2_sensitivity_attention_v1.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal
+
+reward:
+  version: v2_minimal
+  critic_reward_scale: 0.01
+  dso_reward_cost_scale: 0.05
+
+  dso:
+    enable_tracking_bonus: false
+    enable_effective_response_bonus: false
+    enable_target_tracking_cost: false
+    comfort_violation_weight: 0.0
+    soc_violation_weight: 0.0
+    feasibility_bonus_weight: 0.0
+    safety_margin_weight: 1.0
+    hard_violation_weight: 10.0
+    powerflow_failure_weight: 20.0
+    operation_cost_weight: 1.0
+    flex_procurement_cost_weight: 1.0
+    loss_cost_weight: 1.0
+    curtailment_cost_weight: 0.5
+    projection_gap_weight: 1.0
+    projection_attribution: true
+    envelope_width_penalty_weight: 0.0
+    safe_capacity_utilization_weight: 0.2
+    over_conservative_curtailment_weight: 0.5
+    smoothness_weight: 0.05
+    voltage_guard_band_pu: 0.02
+    line_guard_band_percent: 5.0
+    trafo_guard_band_percent: 5.0
+    component_clip: 10.0
+
+  vpp:
+    dispatch:
+      private_profit_weight: 0.02
+      use_baseline_service_payment: true
+      service_payment_weight: 1.0
+      availability_payment_weight: 1.0
+      contract_delivery_weight: 10.0
+      projection_attribution: true
+      projection_linear_weight: 2.0
+      projection_quadratic_weight: 5.0
+      comfort_soc_weight: 0.02
+      battery_degradation_weight: 0.01
+      degradation_price_per_mwh: 5.0
+      preferred_region_bonus_weight: 0.0
+      raw_dso_reward_weight: 0.0
+
+    portfolio:
+      mode: window_return
+      decision_interval_steps: 24
+      long_horizon_profit_weight: 0.05
+      verified_capacity_weight: 0.5
+      delivery_reliability_weight: 1.0
+      future_shield_penalty_weight: 1.0
+      future_projection_penalty_weight: 0.5
+      future_comfort_soc_weight: 0.02
+      switching_keep_cost: 0.0
+      switching_reweight_cost: 0.05
+      switching_membership_change_cost: 0.20
+      raw_dso_reward_weight: 0.0
+
+  shield:
+    dso_penalty_coef: 1.0
+    dispatch_penalty_coef: 1.0
+    portfolio_future_penalty_coef: 1.0

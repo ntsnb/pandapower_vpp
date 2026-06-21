@@ -175,6 +175,26 @@ Artifact caveats:
 - `experiment_progress.csv` is not a strict rectangular CSV: most rows have more fields than the header because progress rows append phase-specific metrics. Use tolerant CSV parsing or `experiment_progress.jsonl` for reliable progress replay.
 - `training_loss_metrics.csv` is large, about 1.3 GB. Avoid loading it entirely unless needed; prefer chunked reads.
 
+## Repository Organization Notes
+
+Canonical configs now live under:
+
+- `configs/scenarios/demo/`
+- `configs/scenarios/benchmark/`
+- `configs/algorithms/dso_sensitivity_attention/v1/`
+- `configs/rewards/v2_minimal/`
+- `configs/experiments/paper_long/sensitivity_attention_v1/`
+
+Root-level `configs/*.yaml` files are compatibility wrappers so older tests, scripts, docs, and experiment manifests can still use historical paths. New code can also use aliases from `configs/registry.yaml`; `load_yaml()` resolves aliases, canonical paths, legacy wrappers, package resources, and nested `extends` chains.
+
+Inactive output directories were moved under `outputs/_archive/` with a manifest at `outputs/_manifests/output_archive_manifest.csv`. The active paper-long run stays at `outputs/paper_training_long_reward_v2_minimal_20260604_gpu_decoder_bounds_happo_hatrpo_logfix` while the training process is still writing progress files.
+
+Root-level generated files were moved:
+
+- `paper_method_experiment_cn.*` -> `docs/reports/paper_method_experiment_cn/`
+- `task_0.md` -> `docs/tasks/reward_v2_minimal_task.md`
+- `task2.md` -> `docs/tasks/current_training_diagnosis_task.md`
+
 ## Recommended Operating Commands
 
 Activate environment:
@@ -213,4 +233,4 @@ Note: `examples/05_random_rl_env_rollout.py` currently runs 10 steps. For a stri
 4. Normalize server-safe output paths in future experiment manifests and run indices.
 5. Make `experiment_progress.csv` rectangular or rely on `experiment_progress.jsonl`.
 6. Add a scripted 4-step smoke command or example if repeated environment validation is expected.
-7. Keep `outputs/paper_training_long_current` as readable historical evidence, but do not treat it as paper-grade proof that RL beats rule-based baselines.
+7. Keep archived `outputs/_archive/paper_long/paper_training_long_current` as readable historical evidence, but do not treat it as paper-grade proof that RL beats rule-based baselines.

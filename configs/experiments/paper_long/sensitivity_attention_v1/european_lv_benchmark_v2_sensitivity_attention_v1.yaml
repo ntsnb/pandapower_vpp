@@ -1,0 +1,77 @@
+extends: configs/european_lv_benchmark_v2.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1
+
+dso:
+  envelope_policy: sensitivity_attention_v1
+  observation_mode: structured_bipartite
+  action_unit_granularity: vpp_bus
+  enable_q_channels: false
+  enable_rule_warmstart: true
+  warmstart_steps: 20000
+  residual_schedule_steps: 50000
+  max_action_units: 32
+  max_network_objects: 20
+  actor:
+    d_model: 256
+    num_heads: 8
+    num_layers: 3
+    action_self_attention_layers: 2
+    dropout: 0.05
+    min_width_ratio: 0.10
+    max_width_ratio: 1.00
+
+selector:
+  topk_low_voltage_buses: 5
+  topk_high_voltage_buses: 5
+  topk_lines: 7
+  topk_trafos: 3
+
+sensitivity:
+  enabled: true
+  estimator: finite_difference_cached
+  cache_enabled: true
+  enable_p_channels: true
+  enable_q_channels: false
+  difference_mode: adaptive_central
+  epsilon_p_min_mw: 0.005
+  epsilon_p_max_mw: 0.05
+  epsilon_p_width_ratio: 0.02
+  update_period_steps: 4
+  cache_ttl_steps: 8
+  confidence_decay: 0.98
+  max_perturbed_action_units_per_update: 12
+  refresh_if_voltage_delta_pu_gt: 0.005
+  refresh_if_loading_delta_pct_gt: 5.0
+  refresh_if_fr_width_change_ratio_gt: 0.20
+  refresh_if_projection_gap_hist_gt_mw: 0.10
+  projection_gap_history_lookback_steps: 16
+
+reward:
+  dso:
+    voltage_violation_weight: 100.0
+    line_overload_weight: 50.0
+    trafo_overload_weight: 50.0
+    projection_gap_weight: 5.0
+    envelope_width_weight: 0.1
+    smoothness_weight: 0.05
+  vpp:
+    preferred_range_weight: 0.5
+    projection_gap_weight: 2.0
+    private_profit_weight: 0.02
+    raw_dso_reward_weight: 0.0
+
+trainer:
+  name: happo
+  gamma: 0.995
+  gae_lambda: 0.95
+  clip_param: 0.2
+  target_kl: 0.02
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  normalize_observations: true
+  normalize_advantages: true
+  nan_guard: true
+  critic_use_action_summary: true
+  dispatch_actor_encoder_type: set_attention_v1
+  device: auto

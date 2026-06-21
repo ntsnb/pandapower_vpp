@@ -65,6 +65,7 @@ class PrivacySeparatedCTDEConfig:
     seed: int = 42
     action_clip: float = 1.0
     portfolio_reward_coef: float = 0.20
+    dispatch_actor_encoder_type: str = "deepset_v1"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -330,10 +331,19 @@ def _targets_from_normalized_actions(
 def _target_from_normalized_scalar(normalized_action: float, vpp_obs: dict[str, Any], action_clip: float) -> float:
     bounds = vpp_obs.get("aggregate_bounds", {})
     envelope = vpp_obs.get("operating_envelope", {})
-    p_min = _as_float(envelope.get("preferred_p_min_mw", bounds.get("p_min_mw", -0.1)), -0.1)
-    p_max = _as_float(envelope.get("preferred_p_max_mw", bounds.get("p_max_mw", 0.1)), 0.1)
+    hard_min = _as_float(bounds.get("p_min_mw", -0.1), -0.1)
+    hard_max = _as_float(bounds.get("p_max_mw", 0.1), 0.1)
+    preferred_min = _as_float(envelope.get("preferred_p_min_mw", hard_min), hard_min)
+    preferred_max = _as_float(envelope.get("preferred_p_max_mw", hard_max), hard_max)
+    if hard_min > hard_max:
+        hard_min, hard_max = hard_max, hard_min
+    if preferred_min > preferred_max:
+        preferred_min, preferred_max = preferred_max, preferred_min
+    p_min = max(hard_min, preferred_min)
+    p_max = min(hard_max, preferred_max)
     if p_min > p_max:
-        p_min, p_max = p_max, p_min
+        midpoint = 0.5 * (hard_min + hard_max)
+        p_min = p_max = max(hard_min, min(hard_max, midpoint))
     clipped = max(-float(action_clip), min(float(action_clip), float(normalized_action)))
     center = 0.5 * (p_min + p_max)
     halfspan = max(1e-6, 0.5 * (p_max - p_min))
@@ -436,6 +446,7 @@ def _build_privacy_separated_networks(
     action_dim: int,
     der_action_dim: int,
     hidden_dim: int,
+    dispatch_actor_encoder_type: str = "deepset_v1",
 ):
     torch, nn, _, _, _ = _require_torch()
     return build_privacy_separated_ctde_modules(
@@ -449,6 +460,7 @@ def _build_privacy_separated_networks(
         action_dim=action_dim,
         der_action_dim=der_action_dim,
         hidden_dim=hidden_dim,
+        dispatch_actor_encoder_type=dispatch_actor_encoder_type,
     )
 
 
@@ -482,16 +494,55 @@ def _gae_returns_advantages(
     makes the training contract explicit for tests and reports.
     """
 
-    reward_tensor = torch.tensor(rewards, dtype=torch.float32)
+    device = values.device if hasattr(values, "device") else None
+    reward_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
     detached_values = values.detach()
     advantages = torch.zeros_like(reward_tensor)
-    running_advantage = torch.tensor(0.0, dtype=torch.float32)
-    next_value = torch.tensor(0.0, dtype=torch.float32)
+    running_advantage = torch.tensor(0.0, dtype=torch.float32, device=device)
+    next_value = torch.tensor(0.0, dtype=torch.float32, device=device)
     for index in range(len(rewards) - 1, -1, -1):
         delta = reward_tensor[index] + float(gamma) * next_value - detached_values[index]
         running_advantage = delta + float(gamma) * float(gae_lambda) * running_advantage
         advantages[index] = running_advantage
         next_value = detached_values[index]
+    returns = advantages + detached_values
+    return returns, advantages
+
+
+def _gae_returns_advantages_bootstrap(
+    *,
+    rewards: list[float],
+    values: Any,
+    next_value: Any,
+    terminals: list[bool],
+    gamma: float,
+    gae_lambda: float,
+    torch: Any,
+) -> tuple[Any, Any]:
+    """Compute GAE for a rollout fragment with explicit terminal masks.
+
+    ``terminals[index]`` means the transition after ``index`` is a true
+    environment terminal and must not bootstrap. A fragment cut keeps
+    ``terminal=False`` on the final transition and bootstraps from
+    ``next_value``.
+    """
+
+    if len(rewards) != len(terminals):
+        raise ValueError("rewards and terminals must have the same length")
+    device = values.device if hasattr(values, "device") else None
+    reward_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
+    terminal_tensor = torch.tensor(terminals, dtype=torch.bool, device=device)
+    detached_values = values.detach()
+    detached_next_value = torch.as_tensor(next_value, dtype=torch.float32, device=device).detach().reshape(())
+    advantages = torch.zeros_like(reward_tensor)
+    running_advantage = torch.tensor(0.0, dtype=torch.float32, device=device)
+    next_value_t = detached_next_value
+    for index in range(len(rewards) - 1, -1, -1):
+        non_terminal = (~terminal_tensor[index]).to(dtype=torch.float32)
+        delta = reward_tensor[index] + float(gamma) * next_value_t * non_terminal - detached_values[index]
+        running_advantage = delta + float(gamma) * float(gae_lambda) * non_terminal * running_advantage
+        advantages[index] = running_advantage
+        next_value_t = detached_values[index]
     returns = advantages + detached_values
     return returns, advantages
 
@@ -955,6 +1006,7 @@ def train_privacy_separated_ctde(
         action_dim=len(vpp_ids),
         der_action_dim=max_der_per_vpp,
         hidden_dim=cfg.hidden_dim,
+        dispatch_actor_encoder_type=cfg.dispatch_actor_encoder_type,
     )
     optimizer = optim.Adam(modules.parameters(), lr=cfg.learning_rate)
     initial_params = torch.cat([param.detach().flatten().cpu() for param in modules.parameters()])
@@ -1413,6 +1465,10 @@ def train_privacy_separated_ctde(
         "architecture_version": architecture_meta["architecture_version"],
         "dso_encoder_type": "privacy_scoped_mlp",
         "vpp_encoder_type": architecture_meta["vpp_encoder_type"],
+        "dispatch_actor_encoder_type": architecture_meta.get(
+            "dispatch_actor_encoder_type",
+            cfg.dispatch_actor_encoder_type,
+        ),
         "vpp_context_features": architecture_meta["vpp_dispatch_context_dim"],
         "der_token_features": architecture_meta["vpp_dispatch_token_dim"],
         "critic_type": architecture_meta["critic_type"],
@@ -1548,6 +1604,7 @@ def evaluate_privacy_separated_ctde_checkpoint(
         action_dim=len(vpp_ids),
         der_action_dim=max_der_per_vpp,
         hidden_dim=hidden_dim,
+        dispatch_actor_encoder_type=str(checkpoint_config.get("dispatch_actor_encoder_type", "deepset_v1")),
     )
     load_result = modules.load_state_dict(checkpoint["model_state_dict"], strict=False)
     modules.eval()

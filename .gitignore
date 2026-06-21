@@ -12,6 +12,13 @@ dist/
 pip-wheel-metadata/
 wheelhouse/
 
+# JavaScript / frontend dependencies and generated assets
+node_modules/
+**/node_modules/
+**/.vite/
+**/coverage/
+**/dist/
+
 # Virtual environments and local package caches
 .venv/
 .venv-server/
@@ -54,6 +61,8 @@ lightning_logs/
 *.pth
 *.ckpt
 *.onnx
+*.safetensors
+*.weights
 *.pkl
 *.pickle
 *.joblib
@@ -103,6 +112,16 @@ id_ed25519*
 *.stackdump
 core
 core.*
+
+# LaTeX build byproducts
+*.aux
+*.fdb_latexmk
+*.fls
+*.xdv
+*.synctex.gz
+*.toc
+*.bbl
+*.blg
 
 # OS/editor files
 .DS_Store

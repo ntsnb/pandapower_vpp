@@ -1,0 +1,8 @@
+extends: configs/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal_preferred_bonus_0p05
+
+reward:
+  vpp:
+    dispatch:
+      preferred_region_bonus_weight: 0.05

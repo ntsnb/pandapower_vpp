@@ -1,0 +1,381 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reward 动态卡片看板：补充审计信息版</title>
+<style>
+:root{--bg:#020617;--panel:rgba(15,23,42,.86);--line:rgba(148,163,184,.25);--text:#e5e7eb;--muted:#94a3b8;--accent:#38bdf8;--violet:#a78bfa;--warn:#fbbf24}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 8% 0,rgba(56,189,248,.22),transparent 34rem),radial-gradient(circle at 92% 0,rgba(167,139,250,.20),transparent 32rem),linear-gradient(180deg,#020617,#0f172a 58%,#020617);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif}
+header{padding:38px 6vw 24px;border-bottom:1px solid var(--line)}h1{font-size:clamp(28px,5vw,48px);margin:0 0 12px}.subtitle{color:#cbd5e1;line-height:1.75;max-width:1220px}.badge{display:inline-flex;margin:10px 8px 0 0;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(15,23,42,.72);font-size:13px;color:#cbd5e1}
+main{padding:26px 6vw 60px}.grid{display:grid;gap:16px}.kpis{grid-template-columns:repeat(4,minmax(180px,1fr));margin-bottom:24px}.kpi,.notice,.role,.card,.table-wrap,.missing-card{background:var(--panel);border:1px solid var(--line);border-radius:22px}.kpi{padding:18px}.kpi .label{color:var(--muted);font-size:13px}.kpi .num{font-size:30px;font-weight:850;margin:8px 0}.kpi .hint{color:#cbd5e1;font-size:13px;line-height:1.6}.notice{padding:18px;margin:0 0 24px;color:#fde68a;line-height:1.75;background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.35)}
+h2{font-size:24px;margin:34px 0 14px}.roles{grid-template-columns:repeat(3,minmax(260px,1fr));margin-bottom:20px}.role{padding:18px}.role h3{margin:0 0 8px}.role p{color:#cbd5e1;line-height:1.65;font-size:14px}.formula{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(2,6,23,.72);border:1px solid var(--line);border-radius:14px;padding:10px;color:#bae6fd;overflow-x:auto;font-size:12px;line-height:1.55}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0 16px}input{width:min(560px,100%);border:1px solid var(--line);background:rgba(15,23,42,.86);color:var(--text);border-radius:14px;padding:12px 14px}.tabs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}.tab{cursor:pointer;border:1px solid var(--line);background:rgba(15,23,42,.65);color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:800}.tab.active{background:var(--accent);color:#03111f;border-color:transparent}
+.cards{grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}.card{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(30,41,59,.96),rgba(15,23,42,.96));box-shadow:0 20px 55px rgba(0,0,0,.24)}.card:before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:linear-gradient(90deg,var(--accent),var(--violet))}.card-head{padding:18px}.title-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.card h3{font-size:18px;margin:0}.key{color:var(--muted);font-size:12px;margin-top:5px;word-break:break-all}.pill{font-size:12px;font-weight:850;border-radius:999px;padding:5px 9px;background:var(--accent);color:#03111f;white-space:nowrap}.algo{background:#334155;color:#e2e8f0}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.metric{border:1px solid var(--line);background:rgba(2,6,23,.45);border-radius:16px;padding:11px}.metric .m-label{color:var(--muted);font-size:12px}.metric .m-value{font-size:18px;font-weight:850;margin-top:4px}.hot{color:#fca5a5}.warn{color:#fbbf24}.ok{color:#86efac}.muted{color:#cbd5e1}.bar{height:8px;background:rgba(148,163,184,.18);border-radius:999px;overflow:hidden;margin-top:8px}.bar div{height:100%;width:var(--w);background:linear-gradient(90deg,var(--accent),var(--violet));border-radius:999px}
+details{border-top:1px solid var(--line);padding:0 18px}summary{cursor:pointer;padding:13px 0;font-weight:850;color:#e2e8f0}.detail{color:#cbd5e1;line-height:1.65;padding-bottom:16px;font-size:14px}.table-wrap{overflow:auto;margin-top:12px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:#bae6fd;background:rgba(2,6,23,.45)}tr:last-child td{border-bottom:0}.missing-card{border-left:4px solid var(--warn);padding:16px}footer{padding:24px 6vw 44px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;line-height:1.7}
+@media(max-width:1000px){.kpis,.roles{grid-template-columns:repeat(2,minmax(190px,1fr))}}@media(max-width:650px){header,main,footer{padding-left:18px;padding-right:18px}.kpis,.roles,.cards{grid-template-columns:1fr}.metrics{grid-template-columns:1fr}}
+</style>
+</head><body>
+<header><h1>Reward 动态卡片看板：补充审计信息版</h1>
+<div class="subtitle">根据补充后的报告第 7 节更新：dispatch 的 7 个有效项、portfolio 的 7 个窗口项已经按 HAPPO / HATRPO train probe 分别补全；DSO 按“审计字段内部量级”展示，但明确标注它不是严格训练项分解。</div>
+<div><span class="badge">数据口径：train probe 审计</span><span class="badge">算法：HAPPO / HATRPO</span><span class="badge">角色内占比：该 role 内有效项绝对值归一化</span><span class="badge">生成：2026-06-07 05:39</span></div></header>
+<main>
+<section class="grid kpis">
+<div class="kpi"><div class="label">Dispatch 可重建项</div><div class="num">7 / 7</div><div class="hint">HAPPO 与 HATRPO 均已补全。</div></div>
+<div class="kpi"><div class="label">Portfolio 可重建项</div><div class="num">7 / 7</div><div class="hint">按 24-step 窗口项解释。</div></div>
+<div class="kpi"><div class="label">DSO 严格分解</div><div class="num">仍缺</div><div class="hint">存在诊断项/父子项双计。</div></div>
+<div class="kpi"><div class="label">Paper-long 级别占比</div><div class="num">仍缺</div><div class="hint">缺少训练 step metrics。</div></div>
+</section>
+<div class="notice"><b>重要口径：</b>dispatch 与 portfolio 的角色内占比现在可以在 train probe 口径下完整展示；DSO 只能展示“审计字段内部量级”，不能当作严格的 R_DSO 项占比。shield 不是独立 MARL role，若计算训练后 role reward，需要把 shield penalty 按 dso_penalty_coef / dispatch_penalty_coef 分配回 DSO 和 dispatch。</div>
+<h2>一、角色结论卡片</h2>
+<section class="grid roles">
+<article class="role"><h3>VPP Dispatch</h3><p>7 个有效项已在 train probe 中可重建。舒适度/SOC 与可用容量支付合计约 89%；私有利润约 10.8%；service/contract/projection 项几乎未激活。</p><span class="formula">R_dispatch = profit + service + availability - shortfall - projection - comfort/SOC - degradation</span></article>
+<article class="role"><h3>VPP Portfolio</h3><p>7 个窗口项已可重建。当前主要由 switching cost、未来 comfort/SOC 与长期利润代理构成；verified capacity、future projection、future shield 基本未激活。</p><span class="formula">R_portfolio_window = profit + capacity - shortfall - shield - projection - comfort/SOC - switching</span></article>
+<article class="role"><h3>DSO</h3><p>DSO 公式完整，但审计表不是干净的 algebra decomposition。dso_over_conservative 是诊断基量，dso_curtailment_cost 才是实际扣分项之一；安全裕度父项和子项也不能双计。</p><span class="formula">R_DSO = U_safe - procurement - loss - curtailment - smoothness - margin - violation - failure - projection</span></article>
+</section>
+<h2>二、Reward 分项动态卡片</h2>
+<div class="toolbar"><input id="search" placeholder="搜索：dispatch、portfolio、DSO、HAPPO、HATRPO、SOC、projection、服务支付、切换成本..."></div>
+<div class="tabs"><button class="tab active" data-filter="all">全部</button><button class="tab" data-filter="dispatch">dispatch</button><button class="tab" data-filter="portfolio">portfolio</button><button class="tab" data-filter="DSO">DSO 审计</button><button class="tab" data-filter="HAPPO">HAPPO</button><button class="tab" data-filter="HATRPO">HATRPO</button><button class="tab" data-filter="zero">只看 0 / 近 0 项</button></div>
+<section id="cards" class="grid cards">
+<article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="false" data-text="dispatch happo 舒适度/soc 惩罚 dispatch_comfort_soc_penalty 0.02 × min(5, raw_comfort_soc_penalty / 100) dispatch 内最大项；权重小但 raw comfort/soc 较大，压过利润项。 精确">
+<div class="card-head"><div class="title-row"><div><h3>舒适度/SOC 惩罚</h3><div class="key">dispatch_comfort_soc_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.073548</div><div class="bar"><div style="--w:73.5480%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">45.020%</div><div class="bar"><div style="--w:45.0200%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">5.600%</div><div class="bar"><div style="--w:5.6000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.02 × min(5, raw_comfort_soc_penalty / 100)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">dispatch 内最大项；权重小但 raw comfort/SOC 较大，压过利润项。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="false" data-text="dispatch happo 可用容量支付 availability_payment price × 0.02 × flex_span_mw × dt 几乎和舒适度/soc 同量级，可能奖励“有容量”多于奖励“调得好”。 精确">
+<div class="card-head"><div class="title-row"><div><h3>可用容量支付</h3><div class="key">availability_payment</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.072072</div><div class="bar"><div style="--w:72.0720%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">44.117%</div><div class="bar"><div style="--w:44.1170%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">5.487%</div><div class="bar"><div style="--w:5.4870%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">price × 0.02 × flex_span_mw × dt</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">几乎和舒适度/SOC 同量级，可能奖励“有容量”多于奖励“调得好”。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="false" data-text="dispatch happo 私有利润奖励 dispatch_private_profit_reward 0.02 × (energy_market_revenue - der_operation_cost) signed 均值为负，但绝对量级仍约占 dispatch 内 10.8%。 精确">
+<div class="card-head"><div class="title-row"><div><h3>私有利润奖励</h3><div class="key">dispatch_private_profit_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value warn">-0.010529</div><div class="bar"><div style="--w:10.5290%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">10.785%</div><div class="bar"><div style="--w:10.7850%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">1.341%</div><div class="bar"><div style="--w:1.3410%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.02 × (energy_market_revenue - der_operation_cost)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">signed 均值为负，但绝对量级仍约占 dispatch 内 10.8%。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="false" data-text="dispatch happo 电池退化惩罚 dispatch_battery_degradation_cost 0.01 × battery_degradation_cost 很小，对储能寿命约束弱。 精确">
+<div class="card-head"><div class="title-row"><div><h3>电池退化惩罚</h3><div class="key">dispatch_battery_degradation_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000111</div><div class="bar"><div style="--w:0.1110%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.068%</div><div class="bar"><div style="--w:0.0680%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">0.0080%</div><div class="bar"><div style="--w:0.0080%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.01 × battery_degradation_cost</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">很小，对储能寿命约束弱。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="false" data-text="dispatch happo 合约短缺惩罚 dispatch_contract_shortfall_penalty 10 × contract_shortfall_mw² 几乎不激活，说明 verified delivery/contract shortfall 挑战不足。 精确">
+<div class="card-head"><div class="title-row"><div><h3>合约短缺惩罚</h3><div class="key">dispatch_contract_shortfall_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000017</div><div class="bar"><div style="--w:0.0170%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.010%</div><div class="bar"><div style="--w:0.0100%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">0.0010%</div><div class="bar"><div style="--w:0.0010%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">10 × contract_shortfall_mw²</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">几乎不激活，说明 verified delivery/contract shortfall 挑战不足。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="true" data-text="dispatch happo 灵活性服务支付 dispatch_flexibility_service_payment price × verified_delivery_mw × dt 不是缺字段，而是该 probe 中 verified delivery 服务支付为 0。 精确为 0">
+<div class="card-head"><div class="title-row"><div><h3>灵活性服务支付</h3><div class="key">dispatch_flexibility_service_payment</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确为 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">price × verified_delivery_mw × dt</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">不是缺字段，而是该 probe 中 verified delivery 服务支付为 0。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HAPPO" data-zero="true" data-text="dispatch happo dispatch 投影惩罚 dispatch_projection_penalty 2 × projection_gap + 5 × projection_gap² 本地投影几乎未触发或被记录为 0。 精确为 0">
+<div class="card-head"><div class="title-row"><div><h3>Dispatch 投影惩罚</h3><div class="key">dispatch_projection_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确为 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">2 × projection_gap + 5 × projection_gap²</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">本地投影几乎未触发或被记录为 0。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="false" data-text="dispatch hatrpo 舒适度/soc 惩罚 dispatch_comfort_soc_penalty 0.02 × min(5, raw_comfort_soc_penalty / 100) 与 happo 相同，是 dispatch 内最大项。 精确">
+<div class="card-head"><div class="title-row"><div><h3>舒适度/SOC 惩罚</h3><div class="key">dispatch_comfort_soc_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.074216</div><div class="bar"><div style="--w:74.2160%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">44.839%</div><div class="bar"><div style="--w:44.8390%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">5.619%</div><div class="bar"><div style="--w:5.6190%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.02 × min(5, raw_comfort_soc_penalty / 100)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">与 HAPPO 相同，是 dispatch 内最大项。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="false" data-text="dispatch hatrpo 可用容量支付 availability_payment price × 0.02 × flex_span_mw × dt 与舒适度/soc 基本同量级。 精确">
+<div class="card-head"><div class="title-row"><div><h3>可用容量支付</h3><div class="key">availability_payment</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.073374</div><div class="bar"><div style="--w:73.3740%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">44.330%</div><div class="bar"><div style="--w:44.3300%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">5.555%</div><div class="bar"><div style="--w:5.5550%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">price × 0.02 × flex_span_mw × dt</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">与舒适度/SOC 基本同量级。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="false" data-text="dispatch hatrpo 私有利润奖励 dispatch_private_profit_reward 0.02 × (energy_market_revenue - der_operation_cost) 仍明显弱于 comfort/soc 与 availability。 精确">
+<div class="card-head"><div class="title-row"><div><h3>私有利润奖励</h3><div class="key">dispatch_private_profit_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value warn">-0.010474</div><div class="bar"><div style="--w:10.4740%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">10.753%</div><div class="bar"><div style="--w:10.7530%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">1.347%</div><div class="bar"><div style="--w:1.3470%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.02 × (energy_market_revenue - der_operation_cost)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">仍明显弱于 comfort/SOC 与 availability。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="false" data-text="dispatch hatrpo 电池退化惩罚 dispatch_battery_degradation_cost 0.01 × battery_degradation_cost 很小。 精确">
+<div class="card-head"><div class="title-row"><div><h3>电池退化惩罚</h3><div class="key">dispatch_battery_degradation_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000103</div><div class="bar"><div style="--w:0.1030%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.062%</div><div class="bar"><div style="--w:0.0620%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">0.0080%</div><div class="bar"><div style="--w:0.0080%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.01 × battery_degradation_cost</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">很小。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="false" data-text="dispatch hatrpo 合约短缺惩罚 dispatch_contract_shortfall_penalty 10 × contract_shortfall_mw² 很小。 精确">
+<div class="card-head"><div class="title-row"><div><h3>合约短缺惩罚</h3><div class="key">dispatch_contract_shortfall_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000027</div><div class="bar"><div style="--w:0.0270%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.016%</div><div class="bar"><div style="--w:0.0160%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value ok">0.0020%</div><div class="bar"><div style="--w:0.0020%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">10 × contract_shortfall_mw²</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">很小。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="true" data-text="dispatch hatrpo dispatch 投影惩罚 dispatch_projection_penalty 2 × projection_gap + 5 × projection_gap² 可忽略。 约 0">
+<div class="card-head"><div class="title-row"><div><h3>Dispatch 投影惩罚</h3><div class="key">dispatch_projection_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">约 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">2 × projection_gap + 5 × projection_gap²</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">可忽略。</div></details>
+</article><article class="card" data-role="dispatch" data-algo="HATRPO" data-zero="true" data-text="dispatch hatrpo 灵活性服务支付 dispatch_flexibility_service_payment price × verified_delivery_mw × dt 未激活。 精确为 0">
+<div class="card-head"><div class="title-row"><div><h3>灵活性服务支付</h3><div class="key">dispatch_flexibility_service_payment</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">dispatch</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确为 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">price × verified_delivery_mw × dt</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">未激活。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="false" data-text="portfolio happo 切换成本 portfolio_switching_cost switching_cost portfolio 内最大项，说明慢周期动作切换成本主导组合 actor 的可见信号。 精确">
+<div class="card-head"><div class="title-row"><div><h3>切换成本</h3><div class="key">portfolio_switching_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.002493</div><div class="bar"><div style="--w:2.4930%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">42.259%</div><div class="bar"><div style="--w:42.2590%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">switching_cost</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">portfolio 内最大项，说明慢周期动作切换成本主导组合 actor 的可见信号。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="false" data-text="portfolio happo 未来 comfort/soc 惩罚 portfolio_future_comfort_soc_penalty 0.02 × mean_comfort_soc 第二大项，来自窗口内 dispatch 的 comfort/soc 风险。 精确">
+<div class="card-head"><div class="title-row"><div><h3>未来 comfort/SOC 惩罚</h3><div class="key">portfolio_future_comfort_soc_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.001992</div><div class="bar"><div style="--w:1.9920%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">33.770%</div><div class="bar"><div style="--w:33.7700%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.02 × mean_comfort_soc</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">第二大项，来自窗口内 dispatch 的 comfort/SOC 风险。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="false" data-text="portfolio happo 长期利润项 portfolio_mean_profit_reward 0.05 × mean_profit signed 均值为负，但量级不小。 精确">
+<div class="card-head"><div class="title-row"><div><h3>长期利润项</h3><div class="key">portfolio_mean_profit_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">-0.001167</div><div class="bar"><div style="--w:1.1670%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">23.836%</div><div class="bar"><div style="--w:23.8360%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.05 × mean_profit</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">signed 均值为负，但量级不小。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="false" data-text="portfolio happo 合约短缺惩罚 portfolio_contract_shortfall_penalty mean_contract_shortfall 很小。 精确">
+<div class="card-head"><div class="title-row"><div><h3>合约短缺惩罚</h3><div class="key">portfolio_contract_shortfall_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000008</div><div class="bar"><div style="--w:0.0080%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.133%</div><div class="bar"><div style="--w:0.1330%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">mean_contract_shortfall</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">很小。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="true" data-text="portfolio happo 未来 shield 惩罚 portfolio_future_shield_penalty mean_shield_intervention 很小。 约 0">
+<div class="card-head"><div class="title-row"><div><h3>未来 shield 惩罚</h3><div class="key">portfolio_future_shield_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.0030%</div><div class="bar"><div style="--w:0.0030%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">约 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">mean_shield_intervention</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">很小。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="true" data-text="portfolio happo 已验证容量奖励 portfolio_verified_capacity_reward 0.5 × mean_verified_capacity 未激活。 精确为 0">
+<div class="card-head"><div class="title-row"><div><h3>已验证容量奖励</h3><div class="key">portfolio_verified_capacity_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确为 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.5 × mean_verified_capacity</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">未激活。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HAPPO" data-zero="true" data-text="portfolio happo 未来 projection 惩罚 portfolio_future_projection_penalty 0.5 × mean_projection_gap 未激活。 精确为 0">
+<div class="card-head"><div class="title-row"><div><h3>未来 projection 惩罚</h3><div class="key">portfolio_future_projection_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HAPPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确为 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.5 × mean_projection_gap</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">未激活。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="false" data-text="portfolio hatrpo 切换成本 portfolio_switching_cost switching_cost 比 happo 更强地由 switching cost 主导。 精确">
+<div class="card-head"><div class="title-row"><div><h3>切换成本</h3><div class="key">portfolio_switching_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.003885</div><div class="bar"><div style="--w:3.8850%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">53.325%</div><div class="bar"><div style="--w:53.3250%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">switching_cost</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">比 HAPPO 更强地由 switching cost 主导。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="false" data-text="portfolio hatrpo 未来 comfort/soc 惩罚 portfolio_future_comfort_soc_penalty 0.02 × mean_comfort_soc 第二大项。 精确">
+<div class="card-head"><div class="title-row"><div><h3>未来 comfort/SOC 惩罚</h3><div class="key">portfolio_future_comfort_soc_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.002009</div><div class="bar"><div style="--w:2.0090%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">27.579%</div><div class="bar"><div style="--w:27.5790%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.02 × mean_comfort_soc</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">第二大项。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="false" data-text="portfolio hatrpo 长期利润项 portfolio_mean_profit_reward 0.05 × mean_profit 仍为负均值。 精确">
+<div class="card-head"><div class="title-row"><div><h3>长期利润项</h3><div class="key">portfolio_mean_profit_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">-0.001163</div><div class="bar"><div style="--w:1.1630%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">18.941%</div><div class="bar"><div style="--w:18.9410%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.05 × mean_profit</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">仍为负均值。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="false" data-text="portfolio hatrpo 合约短缺惩罚 portfolio_contract_shortfall_penalty mean_contract_shortfall 很小。 精确">
+<div class="card-head"><div class="title-row"><div><h3>合约短缺惩罚</h3><div class="key">portfolio_contract_shortfall_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000011</div><div class="bar"><div style="--w:0.0110%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.155%</div><div class="bar"><div style="--w:0.1550%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">精确</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">mean_contract_shortfall</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">很小。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="true" data-text="portfolio hatrpo 未来 shield 惩罚 portfolio_future_shield_penalty mean_shield_intervention 基本未激活。 约 0">
+<div class="card-head"><div class="title-row"><div><h3>未来 shield 惩罚</h3><div class="key">portfolio_future_shield_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">约 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">mean_shield_intervention</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">基本未激活。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="true" data-text="portfolio hatrpo 已验证容量奖励 portfolio_verified_capacity_reward 0.5 × mean_verified_capacity 基本未激活。 约 0">
+<div class="card-head"><div class="title-row"><div><h3>已验证容量奖励</h3><div class="key">portfolio_verified_capacity_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">约 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.5 × mean_verified_capacity</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">基本未激活。</div></details>
+</article><article class="card" data-role="portfolio" data-algo="HATRPO" data-zero="true" data-text="portfolio hatrpo 未来 projection 惩罚 portfolio_future_projection_penalty 0.5 × mean_projection_gap 基本未激活。 约 0">
+<div class="card-head"><div class="title-row"><div><h3>未来 projection 惩罚</h3><div class="key">portfolio_future_projection_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">portfolio</span><span class="pill algo">HATRPO</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value muted">0</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value muted">0.000%</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">约 0</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.5 × mean_projection_gap</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">基本未激活。</div></details>
+</article><article class="card" data-role="DSO" data-algo="HAPPO probe" data-zero="false" data-text="dso happo probe 过保守削减诊断量 dso_over_conservative_curtailment_penalty over_conservative = max(0, 1 - u_safe) 不能和 dso_curtailment_cost 同时作为独立训练项相加，否则双计保守性信号。 诊断项，不能直接当作训练项">
+<div class="card-head"><div class="title-row"><div><h3>过保守削减诊断量</h3><div class="key">dso_over_conservative_curtailment_penalty</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">DSO</span><span class="pill algo">HAPPO probe</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.692168</div><div class="bar"><div style="--w:100.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value hot">60.498%</div><div class="bar"><div style="--w:60.4980%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">诊断项，不能直接当作训练项</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">over_conservative = max(0, 1 - U_safe)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">不能和 dso_curtailment_cost 同时作为独立训练项相加，否则双计保守性信号。</div></details>
+</article><article class="card" data-role="DSO" data-algo="HAPPO probe" data-zero="false" data-text="dso happo probe 削减成本 dso_curtailment_cost 0.5 × over_conservative 实际训练扣分项之一；显示保守/削减信号极强。 训练扣分项">
+<div class="card-head"><div class="title-row"><div><h3>削减成本</h3><div class="key">dso_curtailment_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">DSO</span><span class="pill algo">HAPPO probe</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.346084</div><div class="bar"><div style="--w:100.0000%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value warn">30.249%</div><div class="bar"><div style="--w:30.2490%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">训练扣分项</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.5 × over_conservative</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">实际训练扣分项之一；显示保守/削减信号极强。</div></details>
+</article><article class="card" data-role="DSO" data-algo="HAPPO probe" data-zero="false" data-text="dso happo probe 安全容量利用奖励 dso_safe_capacity_utilization_reward 0.2 × u_safe 鼓励放宽可用容量。 训练奖励项">
+<div class="card-head"><div class="title-row"><div><h3>安全容量利用奖励</h3><div class="key">dso_safe_capacity_utilization_reward</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">DSO</span><span class="pill algo">HAPPO probe</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.061566</div><div class="bar"><div style="--w:61.5660%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">5.381%</div><div class="bar"><div style="--w:5.3810%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">训练奖励项</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">0.2 × U_safe</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">鼓励放宽可用容量。</div></details>
+</article><article class="card" data-role="DSO" data-algo="HAPPO probe" data-zero="false" data-text="dso happo probe 灵活性采购成本 dso_flex_procurement_cost clip(procurement_proxy_cost / 1000) 经济代理成本项。 训练扣分项">
+<div class="card-head"><div class="title-row"><div><h3>灵活性采购成本</h3><div class="key">dso_flex_procurement_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">DSO</span><span class="pill algo">HAPPO probe</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value hot">0.043177</div><div class="bar"><div style="--w:43.1770%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">3.774%</div><div class="bar"><div style="--w:3.7740%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">训练扣分项</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">clip(procurement_proxy_cost / 1000)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">经济代理成本项。</div></details>
+</article><article class="card" data-role="DSO" data-algo="HAPPO probe" data-zero="false" data-text="dso happo probe 网损成本 dso_loss_cost clip(line_loss_cost / 1000) 量级很小。 训练扣分项">
+<div class="card-head"><div class="title-row"><div><h3>网损成本</h3><div class="key">dso_loss_cost</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">DSO</span><span class="pill algo">HAPPO probe</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.001104</div><div class="bar"><div style="--w:1.1040%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.097%</div><div class="bar"><div style="--w:0.0970%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">训练扣分项</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">clip(line_loss_cost / 1000)</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">量级很小。</div></details>
+</article><article class="card" data-role="DSO" data-algo="HAPPO probe" data-zero="false" data-text="dso happo probe 安全裕度父/子诊断 dso_safety_margin_or_voltage_guard dso_safety_margin_penalty 或 voltage/line/trafo guard 子项 父项和子项不能同时作为独立 reward 项相加。 只能选父项或子项之一">
+<div class="card-head"><div class="title-row"><div><h3>安全裕度父/子诊断</h3><div class="key">dso_safety_margin_or_voltage_guard</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill">DSO</span><span class="pill algo">HAPPO probe</span></div></div>
+<div class="metrics">
+<div class="metric"><div class="m-label">平均值 / signed mean</div><div class="m-value ok">0.000007</div><div class="bar"><div style="--w:0.0070%"></div></div></div>
+<div class="metric"><div class="m-label">角色内占比</div><div class="m-value ok">0.0010%</div><div class="bar"><div style="--w:0.0010%"></div></div></div>
+<div class="metric"><div class="m-label">全局绝对占比</div><div class="m-value muted">—</div><div class="bar"><div style="--w:0.0000%"></div></div></div>
+<div class="metric"><div class="m-label">数据状态</div><div class="m-value muted">只能选父项或子项之一</div></div>
+</div></div>
+<details open><summary>公式</summary><div class="detail"><span class="formula">dso_safety_margin_penalty 或 voltage/line/trafo guard 子项</span></div></details>
+<details><summary>解释 / 风险</summary><div class="detail">父项和子项不能同时作为独立 reward 项相加。</div></details>
+</article></section>
+<h2>三、补充后的关键表格</h2><div class="table-wrap"><table><thead><tr><th>role</th><th>algorithm</th><th>item</th><th>mean</th><th>global abs share</th><th>role share</th><th>status</th></tr></thead><tbody><tr><td>dispatch</td><td>HAPPO</td><td>舒适度/SOC 惩罚</td><td>0.073548</td><td>5.600%</td><td>45.020%</td><td>精确</td></tr><tr><td>dispatch</td><td>HAPPO</td><td>可用容量支付</td><td>0.072072</td><td>5.487%</td><td>44.117%</td><td>精确</td></tr><tr><td>dispatch</td><td>HAPPO</td><td>私有利润奖励</td><td>-0.010529</td><td>1.341%</td><td>10.785%</td><td>精确</td></tr><tr><td>dispatch</td><td>HAPPO</td><td>电池退化惩罚</td><td>0.000111</td><td>0.0080%</td><td>0.068%</td><td>精确</td></tr><tr><td>dispatch</td><td>HAPPO</td><td>合约短缺惩罚</td><td>0.000017</td><td>0.0010%</td><td>0.010%</td><td>精确</td></tr><tr><td>dispatch</td><td>HAPPO</td><td>灵活性服务支付</td><td>0</td><td>0.000%</td><td>0.000%</td><td>精确为 0</td></tr><tr><td>dispatch</td><td>HAPPO</td><td>Dispatch 投影惩罚</td><td>0</td><td>0.000%</td><td>0.000%</td><td>精确为 0</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>舒适度/SOC 惩罚</td><td>0.074216</td><td>5.619%</td><td>44.839%</td><td>精确</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>可用容量支付</td><td>0.073374</td><td>5.555%</td><td>44.330%</td><td>精确</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>私有利润奖励</td><td>-0.010474</td><td>1.347%</td><td>10.753%</td><td>精确</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>电池退化惩罚</td><td>0.000103</td><td>0.0080%</td><td>0.062%</td><td>精确</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>合约短缺惩罚</td><td>0.000027</td><td>0.0020%</td><td>0.016%</td><td>精确</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>Dispatch 投影惩罚</td><td>0</td><td>0.000%</td><td>0.000%</td><td>约 0</td></tr><tr><td>dispatch</td><td>HATRPO</td><td>灵活性服务支付</td><td>0</td><td>0.000%</td><td>0.000%</td><td>精确为 0</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>切换成本</td><td>0.002493</td><td>—</td><td>42.259%</td><td>精确</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>未来 comfort/SOC 惩罚</td><td>0.001992</td><td>—</td><td>33.770%</td><td>精确</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>长期利润项</td><td>-0.001167</td><td>—</td><td>23.836%</td><td>精确</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>合约短缺惩罚</td><td>0.000008</td><td>—</td><td>0.133%</td><td>精确</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>未来 shield 惩罚</td><td>0</td><td>—</td><td>0.0030%</td><td>约 0</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>已验证容量奖励</td><td>0</td><td>—</td><td>0.000%</td><td>精确为 0</td></tr><tr><td>portfolio</td><td>HAPPO</td><td>未来 projection 惩罚</td><td>0</td><td>—</td><td>0.000%</td><td>精确为 0</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>切换成本</td><td>0.003885</td><td>—</td><td>53.325%</td><td>精确</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>未来 comfort/SOC 惩罚</td><td>0.002009</td><td>—</td><td>27.579%</td><td>精确</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>长期利润项</td><td>-0.001163</td><td>—</td><td>18.941%</td><td>精确</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>合约短缺惩罚</td><td>0.000011</td><td>—</td><td>0.155%</td><td>精确</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>未来 shield 惩罚</td><td>0</td><td>—</td><td>0.000%</td><td>约 0</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>已验证容量奖励</td><td>0</td><td>—</td><td>0.000%</td><td>约 0</td></tr><tr><td>portfolio</td><td>HATRPO</td><td>未来 projection 惩罚</td><td>0</td><td>—</td><td>0.000%</td><td>约 0</td></tr><tr><td>DSO</td><td>HAPPO probe</td><td>过保守削减诊断量</td><td>0.692168</td><td>—</td><td>60.498%</td><td>诊断项，不能直接当作训练项</td></tr><tr><td>DSO</td><td>HAPPO probe</td><td>削减成本</td><td>0.346084</td><td>—</td><td>30.249%</td><td>训练扣分项</td></tr><tr><td>DSO</td><td>HAPPO probe</td><td>安全容量利用奖励</td><td>0.061566</td><td>—</td><td>5.381%</td><td>训练奖励项</td></tr><tr><td>DSO</td><td>HAPPO probe</td><td>灵活性采购成本</td><td>0.043177</td><td>—</td><td>3.774%</td><td>训练扣分项</td></tr><tr><td>DSO</td><td>HAPPO probe</td><td>网损成本</td><td>0.001104</td><td>—</td><td>0.097%</td><td>训练扣分项</td></tr><tr><td>DSO</td><td>HAPPO probe</td><td>安全裕度父/子诊断</td><td>0.000007</td><td>—</td><td>0.0010%</td><td>只能选父项或子项之一</td></tr></tbody></table></div><h2>四、当前仍然缺少的信息</h2><section class="grid"><div class="missing-card"><h3 style="margin:0 0 8px">最新完整 paper-long 训练 step metrics</h3><p style="margin:0 0 8px;color:#cbd5e1;line-height:1.65">最新完整 paper-long 目录仍停留在 baseline/eval 可审计状态，缺少训练 step metrics；因此不能声称得到 paper-long 级别 role 内 reward 百分比。</p><span class="formula">runs/*/train/*step_metrics.csv, happo_step_metrics.csv, hatrpo_step_metrics.csv</span></div><div class="missing-card"><h3 style="margin:0 0 8px">干净的 DSO effective reward terms</h3><p style="margin:0 0 8px;color:#cbd5e1;line-height:1.65">当前 DSO 审计表有诊断项和父子项双计，不能直接作为严格 DSO reward algebra decomposition。</p><span class="formula">dso_effective_reward_terms.csv：只包含 R_DSO 中真正相加/相减的项</span></div><div class="missing-card"><h3 style="margin:0 0 8px">Shield penalty 分配回 role 后的训练占比</h3><p style="margin:0 0 8px;color:#cbd5e1;line-height:1.65">当前 shield_intervention_penalty 被列为 safety source；若算训练后 role reward，需要按 dso_penalty_coef 和 dispatch_penalty_coef 分别并入 DSO/dispatch。</p><span class="formula">dso_reward_train_after_shield, dispatch_reward_train_after_shield, shield_penalty_allocated_to_role</span></div><div class="missing-card"><h3 style="margin:0 0 8px">按 VPP/agent_id 拆分的 dispatch 分项</h3><p style="margin:0 0 8px;color:#cbd5e1;line-height:1.65">现有 probe 是均值/聚合口径，不能判断某个 VPP 是否被 comfort/SOC 或 projection 单独支配。</p><span class="formula">vpp_id, agent_id, dispatch_component_*</span></div><div class="missing-card"><h3 style="margin:0 0 8px">signed contribution 与 absolute contribution 双口径</h3><p style="margin:0 0 8px;color:#cbd5e1;line-height:1.65">角色内占比使用绝对值，不能替代正负方向贡献；论文和调参都需要同时看 signed/absolute。</p><span class="formula">component_signed_value, component_abs_value</span></div></section></main><footer>本看板不对缺失项做估算；0 项与“缺失项”已分开标注。</footer>
+<script>
+const tabs=document.querySelectorAll('.tab'),cards=document.querySelectorAll('.card'),search=document.getElementById('search');let current='all';
+function filt(){let q=search.value.trim().toLowerCase();cards.forEach(c=>{let ok=current==='all'||c.dataset.role===current||c.dataset.algo===current||(current==='zero'&&c.dataset.zero==='true');let txt=!q||c.dataset.text.includes(q);c.style.display=(ok&&txt)?'':'none';});}
+tabs.forEach(t=>t.addEventListener('click',()=>{tabs.forEach(x=>x.classList.remove('active'));t.classList.add('active');current=t.dataset.filter;filt();}));search.addEventListener('input',filt);
+</script></body></html>

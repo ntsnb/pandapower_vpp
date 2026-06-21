@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,12 @@ import pandas as pd
 
 from vpp_dso_sim.envs.multi_agent_env import MultiAgentVPPDSOEnv
 from vpp_dso_sim.envs.observations import build_critic_global_state
-from vpp_dso_sim.learning.advanced_marl import TwinCriticSpec, build_twin_critic
+from vpp_dso_sim.learning.advanced_marl import (
+    TwinCriticSpec,
+    _resolve_torch_device,
+    _state_dict_to_cpu,
+    build_twin_critic,
+)
 from vpp_dso_sim.learning.deep_rl import (
     _build_privacy_separated_networks,
     _target_from_normalized_scalar,
@@ -25,6 +30,7 @@ from vpp_dso_sim.learning.deep_rl import (
     encode_vpp_dispatch_observation,
 )
 from vpp_dso_sim.learning.reward_contracts import shield_intervention_metrics
+from vpp_dso_sim.learning.reward_config import write_reward_config_artifacts
 from vpp_dso_sim.utils.io import ensure_dir, write_json
 
 
@@ -90,6 +96,8 @@ class MATD3Config:
     target_q_clip: float | None = 1_000.0
     critic_grad_clip: float = 1.0
     actor_grad_clip: float = 1.0
+    device: str = "auto"
+    dispatch_actor_encoder_type: str = "deepset_v1"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -301,9 +309,28 @@ def train_matd3(
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     out = ensure_dir(output_dir)
+    device, device_meta = _resolve_torch_device(torch, cfg.device)
 
     env_probe = MultiAgentVPPDSOEnv(config_path=config_path, horizon_steps=cfg.horizon_steps)
     observations, _ = env_probe.reset(seed=cfg.seed)
+    resolved_reward_config = env_probe.scenario.dso.reward_config
+    cfg = replace(
+        cfg,
+        reward_scale=float(resolved_reward_config.critic_reward_scale),
+        dso_shield_intervention_penalty_coef=float(resolved_reward_config.shield.dso_penalty_coef),
+        dispatch_shield_intervention_penalty_coef=float(resolved_reward_config.shield.dispatch_penalty_coef),
+    )
+    reward_artifacts = write_reward_config_artifacts(out, resolved_reward_config)
+    print(
+        "[RewardConfig] "
+        f"version={resolved_reward_config.version} "
+        f"critic_reward_scale={resolved_reward_config.critic_reward_scale} "
+        f"shield_dso_penalty_coef={resolved_reward_config.shield.dso_penalty_coef} "
+        f"shield_dispatch_penalty_coef={resolved_reward_config.shield.dispatch_penalty_coef} "
+        f"shield_portfolio_future_penalty_coef={resolved_reward_config.shield.portfolio_future_penalty_coef} "
+        f"hash={reward_artifacts['reward_config_hash']}",
+        flush=True,
+    )
     policy_signature = env_probe.policy_compatibility_signature()
     vpp_ids = [vpp.id for vpp in env_probe.scenario.vpps]
     der_ids_by_vpp = {vpp.id: [der.id for der in vpp.der_list] for vpp in env_probe.scenario.vpps}
@@ -327,6 +354,7 @@ def train_matd3(
         action_dim=len(vpp_ids),
         der_action_dim=max_der_per_vpp,
         hidden_dim=cfg.hidden_dim,
+        dispatch_actor_encoder_type=cfg.dispatch_actor_encoder_type,
     )
     actor_modules = torch.nn.ModuleDict({"dso_actor": modules["dso_actor"]})
     if cfg.share_vpp_dispatch_parameters:
@@ -346,6 +374,10 @@ def train_matd3(
     critic_head_names = ["dso_global_guidance", *[f"{vpp_id}_dispatch" for vpp_id in vpp_ids]]
     role_critic = build_twin_critic(critic_spec, require_torch=True)
     target_role_critic = copy.deepcopy(role_critic)
+    actor_modules.to(device)
+    target_actor_modules.to(device)
+    role_critic.to(device)
+    target_role_critic.to(device)
 
     dso_actor_optimizer = optim.Adam(actor_modules["dso_actor"].parameters(), lr=float(cfg.actor_learning_rate))
     dispatch_actor_params = [
@@ -394,8 +426,8 @@ def train_matd3(
 
         for step in range(cfg.horizon_steps):
             with torch.no_grad():
-                dso_tensor = torch.tensor(dso_obs_vec, dtype=torch.float32).unsqueeze(0)
-                vpp_tensor = torch.tensor(vpp_obs_mat, dtype=torch.float32).unsqueeze(0)
+                dso_tensor = torch.tensor(dso_obs_vec, dtype=torch.float32, device=device).unsqueeze(0)
+                vpp_tensor = torch.tensor(vpp_obs_mat, dtype=torch.float32, device=device).unsqueeze(0)
                 dso_action_t, aggregate_t, der_t, joint_t = _actor_action_tensors(
                     modules=actor_modules,
                     dso_obs_tensor=dso_tensor,
@@ -549,15 +581,15 @@ def train_matd3(
 
             if len(replay) >= int(cfg.batch_size) and total_env_steps >= int(cfg.warmup_steps):
                 batch = replay.sample(cfg.batch_size)
-                critic_state_b = torch.tensor(batch["critic_state"], dtype=torch.float32)
-                action_b = torch.tensor(batch["joint_action"], dtype=torch.float32)
-                next_critic_state_b = torch.tensor(batch["next_critic_state"], dtype=torch.float32)
-                next_dso_obs_b = torch.tensor(batch["next_dso_obs"], dtype=torch.float32)
-                next_vpp_obs_b = torch.tensor(batch["next_vpp_obs"], dtype=torch.float32)
-                role_reward_b = torch.tensor(batch["role_rewards"], dtype=torch.float32)
-                shield_gap_b = torch.tensor(batch["shield_intervention_gap_mw"], dtype=torch.float32)
-                shield_penalty_b = torch.tensor(batch["shield_intervention_penalty"], dtype=torch.float32)
-                done_b = torch.tensor(batch["done"], dtype=torch.float32)
+                critic_state_b = torch.tensor(batch["critic_state"], dtype=torch.float32, device=device)
+                action_b = torch.tensor(batch["joint_action"], dtype=torch.float32, device=device)
+                next_critic_state_b = torch.tensor(batch["next_critic_state"], dtype=torch.float32, device=device)
+                next_dso_obs_b = torch.tensor(batch["next_dso_obs"], dtype=torch.float32, device=device)
+                next_vpp_obs_b = torch.tensor(batch["next_vpp_obs"], dtype=torch.float32, device=device)
+                role_reward_b = torch.tensor(batch["role_rewards"], dtype=torch.float32, device=device)
+                shield_gap_b = torch.tensor(batch["shield_intervention_gap_mw"], dtype=torch.float32, device=device)
+                shield_penalty_b = torch.tensor(batch["shield_intervention_penalty"], dtype=torch.float32, device=device)
+                done_b = torch.tensor(batch["done"], dtype=torch.float32, device=device)
 
                 with torch.no_grad():
                     _, _, _, next_action_b = _actor_action_tensors(
@@ -602,8 +634,8 @@ def train_matd3(
                 dso_actor_grad_norm = None
                 dispatch_actor_grad_norm = None
                 if critic_updates % int(cfg.policy_delay) == 0:
-                    dso_obs_b = torch.tensor(batch["dso_obs"], dtype=torch.float32)
-                    vpp_obs_b = torch.tensor(batch["vpp_obs"], dtype=torch.float32)
+                    dso_obs_b = torch.tensor(batch["dso_obs"], dtype=torch.float32, device=device)
+                    vpp_obs_b = torch.tensor(batch["vpp_obs"], dtype=torch.float32, device=device)
                     current_dso_action_b, current_aggregate_action_b, current_der_action_b, _ = _actor_action_tensors(
                         modules=actor_modules,
                         dso_obs_tensor=dso_obs_b,
@@ -650,7 +682,7 @@ def train_matd3(
                     dispatch_actor_loss = (
                         -dispatch_q_heads[:, 1:].mean()
                         if dispatch_q_heads.shape[1] > 1
-                        else torch.tensor(0.0, dtype=torch.float32)
+                        else torch.tensor(0.0, dtype=torch.float32, device=device)
                     )
                     dispatch_actor_optimizer.zero_grad()
                     (float(cfg.dispatch_actor_loss_coef) * dispatch_actor_loss).backward()
@@ -737,10 +769,10 @@ def train_matd3(
             best_episode_reward = float(episode_reward)
             best_episode_index = int(episode)
             best_checkpoint_state = {
-                "actor_state_dict": copy.deepcopy(actor_modules.state_dict()),
-                "target_actor_state_dict": copy.deepcopy(target_actor_modules.state_dict()),
-                "role_critic_state_dict": copy.deepcopy(role_critic.state_dict()),
-                "target_role_critic_state_dict": copy.deepcopy(target_role_critic.state_dict()),
+                "actor_state_dict": _state_dict_to_cpu(actor_modules.state_dict()),
+                "target_actor_state_dict": _state_dict_to_cpu(target_actor_modules.state_dict()),
+                "role_critic_state_dict": _state_dict_to_cpu(role_critic.state_dict()),
+                "target_role_critic_state_dict": _state_dict_to_cpu(target_role_critic.state_dict()),
             }
         _set_episode_postfix(
             episode_iter,
@@ -803,24 +835,26 @@ def train_matd3(
             "critic_spec": critic_spec.to_dict(),
             "critic_head_names": critic_head_names,
             "architecture_meta": architecture_meta,
+            "reward_config": resolved_reward_config.to_dict(),
+            "reward_config_hash": reward_artifacts["reward_config_hash"],
             "selection_metric": "episode_reward",
         }
 
     torch.save(
         checkpoint_payload(
-            actor_modules.state_dict(),
-            target_actor_modules.state_dict(),
-            role_critic.state_dict(),
-            target_role_critic.state_dict(),
+            _state_dict_to_cpu(actor_modules.state_dict()),
+            _state_dict_to_cpu(target_actor_modules.state_dict()),
+            _state_dict_to_cpu(role_critic.state_dict()),
+            _state_dict_to_cpu(target_role_critic.state_dict()),
         ),
         checkpoint_path,
     )
     if best_checkpoint_state is None:
         best_checkpoint_state = {
-            "actor_state_dict": copy.deepcopy(actor_modules.state_dict()),
-            "target_actor_state_dict": copy.deepcopy(target_actor_modules.state_dict()),
-            "role_critic_state_dict": copy.deepcopy(role_critic.state_dict()),
-            "target_role_critic_state_dict": copy.deepcopy(target_role_critic.state_dict()),
+            "actor_state_dict": _state_dict_to_cpu(actor_modules.state_dict()),
+            "target_actor_state_dict": _state_dict_to_cpu(target_actor_modules.state_dict()),
+            "role_critic_state_dict": _state_dict_to_cpu(role_critic.state_dict()),
+            "target_role_critic_state_dict": _state_dict_to_cpu(target_role_critic.state_dict()),
         }
         best_episode_index = int(episode_metrics["episode"].iloc[-1]) if not episode_metrics.empty else -1
     torch.save(
@@ -837,6 +871,12 @@ def train_matd3(
         "status": "completed",
         "is_deep_rl": True,
         "deep_learning_framework": "torch",
+        "requested_device": str(device_meta["requested_device"]),
+        "resolved_device": str(device_meta["resolved_device"]),
+        "cuda_available": bool(device_meta["cuda_available"]),
+        "cuda_device_count": int(device_meta["cuda_device_count"]),
+        "cuda_device_name": device_meta["cuda_device_name"],
+        "device_meta": dict(device_meta),
         "training_pattern": "off_policy_ctde",
         "matd3_complete_core": True,
         "continuous_control_scope": "dso_envelope_vpp_aggregate_der_dispatch",
@@ -856,10 +896,18 @@ def train_matd3(
         "target_policy_smoothing": True,
         "delayed_actor_updates": True,
         "reward_scale": float(cfg.reward_scale),
+        "reward_version": str(resolved_reward_config.version),
+        "critic_reward_scale": float(resolved_reward_config.critic_reward_scale),
+        "resolved_reward_config": reward_artifacts["resolved_reward_config"],
+        "reward_config_hash": reward_artifacts["reward_config_hash"],
+        "reward_config_hash_path": reward_artifacts["reward_config_hash_path"],
         "target_q_clip": None if cfg.target_q_clip is None else float(cfg.target_q_clip),
         "critic_grad_clip": float(cfg.critic_grad_clip),
         "actor_grad_clip": float(cfg.actor_grad_clip),
         "dso_dispatch_actor_objectives_separated": True,
+        "dispatch_actor_encoder_type": architecture_meta.get("dispatch_actor_encoder_type", cfg.dispatch_actor_encoder_type),
+        "vpp_encoder_type": architecture_meta.get("vpp_encoder_type", ""),
+        "architecture_version": architecture_meta.get("architecture_version", ""),
         "shield_intervention_penalty_in_role_rewards": True,
         "dso_shield_intervention_penalty_coef": float(cfg.dso_shield_intervention_penalty_coef),
         "dispatch_shield_intervention_penalty_coef": float(cfg.dispatch_shield_intervention_penalty_coef),
@@ -945,6 +993,7 @@ def evaluate_matd3_checkpoint(
         action_dim=len(vpp_ids),
         der_action_dim=max_der_per_vpp,
         hidden_dim=int(cfg.get("hidden_dim", 64)),
+        dispatch_actor_encoder_type=str(cfg.get("dispatch_actor_encoder_type", "deepset_v1")),
     )
     actor_modules = torch.nn.ModuleDict({"dso_actor": modules["dso_actor"]})
     if bool(cfg.get("share_vpp_dispatch_parameters", False)):

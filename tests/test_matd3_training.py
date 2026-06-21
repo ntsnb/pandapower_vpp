@@ -112,6 +112,39 @@ def test_matd3_training_writes_full_off_policy_artifacts():
 
 
 @pytest.mark.skipif(not torch_available(), reason="PyTorch is not installed")
+def test_matd3_training_records_resolved_device_and_reward_artifacts():
+    output_dir = Path("outputs") / "test_matd3_device_summary"
+    result = train_matd3(
+        config_path=Path("configs") / "european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml",
+        output_dir=output_dir,
+        config=MATD3Config(
+            episodes=1,
+            horizon_steps=2,
+            batch_size=2,
+            warmup_steps=2,
+            hidden_dim=16,
+            replay_capacity=64,
+            seed=33,
+            device="cpu",
+        ),
+    )
+
+    summary = result["summary"]
+
+    assert summary["requested_device"] == "cpu"
+    assert summary["resolved_device"] == "cpu"
+    assert "cuda_available" in summary
+    assert "cuda_device_count" in summary
+    assert "cuda_device_name" in summary
+    assert result["summary"]["device_meta"]["resolved_device"] == "cpu"
+    assert summary["reward_version"] == "v2_minimal"
+    assert summary["critic_reward_scale"] == pytest.approx(0.01)
+    assert (output_dir / "resolved_reward_config.yaml").exists()
+    assert (output_dir / "reward_config_hash.txt").exists()
+    assert summary["reward_config_hash"]
+
+
+@pytest.mark.skipif(not torch_available(), reason="PyTorch is not installed")
 def test_matd3_checkpoint_frozen_eval_runs():
     output_dir = Path("outputs") / "test_matd3_eval"
     train = train_matd3(

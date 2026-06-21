@@ -1,0 +1,13 @@
+extends: configs/european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1_reward_v2_minimal_no_shield_eval
+
+reward:
+  shield:
+    dso_penalty_coef: 0.0
+    dispatch_penalty_coef: 0.0
+    portfolio_future_penalty_coef: 0.0
+  vpp:
+    portfolio:
+      future_shield_penalty_weight: 0.0
+      future_projection_penalty_weight: 0.0

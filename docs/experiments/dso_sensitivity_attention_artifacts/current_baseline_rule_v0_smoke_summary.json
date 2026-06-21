@@ -1,0 +1,37 @@
+{
+  "config": "configs/baseline_rule_v0.yaml",
+  "config_hash": "08c92defc44f",
+  "seed": 0,
+  "steps": 2,
+  "output_dir": "outputs/dso_sensitivity_attention/baseline_rule_v0_smoke_seed0",
+  "envelope_policy": "rule_v0",
+  "records": {
+    "bus_voltage": 2,
+    "line_loading": 2,
+    "trafo_loading": 2,
+    "edge_power_flow": 14,
+    "profile_state": 2,
+    "vpp_portfolio_history": 2,
+    "portfolio_change_log": 0,
+    "vpp_day_ahead_bid": 2,
+    "dso_operating_envelope": 2,
+    "fr_envelope_state": 12,
+    "projection_trace": 24,
+    "vpp_rl_disaggregation": 6,
+    "vpp_power": 2,
+    "der_dispatch": 6,
+    "storage_soc": 2,
+    "evcs_soc": 2,
+    "hvac_temperature": 0,
+    "constraint_violations": 0,
+    "reward_components": 2
+  },
+  "nan_or_inf_detected": false,
+  "structured_artifacts": {
+    "selected_network_objects": "outputs/dso_sensitivity_attention/baseline_rule_v0_smoke_seed0/selected_network_objects.csv",
+    "action_units": "outputs/dso_sensitivity_attention/baseline_rule_v0_smoke_seed0/action_units.csv",
+    "sensitivity_edges": "outputs/dso_sensitivity_attention/baseline_rule_v0_smoke_seed0/sensitivity_edges.csv",
+    "dso_actor_outputs": "outputs/dso_sensitivity_attention/baseline_rule_v0_smoke_seed0/dso_actor_outputs.csv",
+    "decoded_operating_envelope": "outputs/dso_sensitivity_attention/baseline_rule_v0_smoke_seed0/decoded_operating_envelope.csv"
+  }
+}

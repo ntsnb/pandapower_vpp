@@ -1,0 +1,7 @@
+extends: configs/european_lv_benchmark_v2_sensitivity_attention_v1.yaml
+
+name: european_lv_benchmark_v2_sensitivity_attention_v1_legacy_v1_reward
+
+reward:
+  version: v1_legacy
+  critic_reward_scale: 0.01

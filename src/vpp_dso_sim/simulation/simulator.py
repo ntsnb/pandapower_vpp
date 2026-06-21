@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import numpy as np
 from vpp_dso_sim.der.evcs import EVCSModel
 from vpp_dso_sim.der.hvac import HVACModel
 from vpp_dso_sim.der.storage import StorageModel
+from vpp_dso_sim.dso.envelope.policy_switch import build_dso_envelope_policy
 from vpp_dso_sim.network.constraints import ConstraintReport
 from vpp_dso_sim.network.powerflow import scale_base_loads
 from vpp_dso_sim.network.sensitivity import compute_vpp_active_power_sensitivity
@@ -25,7 +27,11 @@ from vpp_dso_sim.optimization.feasibility_region import (
 )
 from vpp_dso_sim.simulation.portfolio_events import apply_portfolio_event
 from vpp_dso_sim.simulation.scenario import SimulationScenario
+from vpp_dso_sim.simulation.settlement import build_settlement_audit
 from vpp_dso_sim.utils.io import ensure_dir, write_json
+
+
+DSO_ENVELOPE_GUIDANCE_ACTION_KEY = "__dso_envelope_guidance__"
 
 
 @dataclass
@@ -39,9 +45,11 @@ class Simulator:
     _der_objects_by_id: dict[str, Any] = field(init=False, repr=False)
     _initial_vpp_metadata: dict[str, dict[str, Any]] = field(init=False, repr=False)
     _applied_portfolio_event_ids: set[str] = field(default_factory=set, init=False, repr=False)
+    _dso_envelope_policy: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._capture_initial_state()
+        self._dso_envelope_policy = build_dso_envelope_policy(self.scenario.config)
 
     def _capture_initial_state(self) -> None:
         self._initial_net_tables = {}
@@ -116,13 +124,19 @@ class Simulator:
             "hvac_temperature": [],
             "constraint_violations": [],
             "reward_components": [],
+            "der_settlement_audit": [],
+            "vpp_settlement_summary": [],
         }
         self.scenario.dso.reset()
 
     def _profile_value(self, values: list[float], t: int) -> float:
         return float(values[t % len(values)])
 
-    def step(self, t: int | None = None, actions: dict[str, float] | None = None) -> dict[str, Any]:
+    def step(
+        self,
+        t: int | None = None,
+        actions: dict[str, float] | Callable[..., dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         if not self.records:
             self.reset()
         step = self.current_step if t is None else t
@@ -141,6 +155,18 @@ class Simulator:
         pre_dispatch_powerflow_converged = scenario.dso.run_powerflow()
         pre_dispatch_grid_state = scenario.dso.compute_network_state()
         pre_dispatch_grid_state["pre_dispatch_powerflow_converged"] = bool(pre_dispatch_powerflow_converged)
+        if callable(actions):
+            actions = actions(
+                simulator=self,
+                step=step,
+                price=price,
+                grid_state=pre_dispatch_grid_state,
+            )
+        dso_envelope_guidance = (
+            actions.get(DSO_ENVELOPE_GUIDANCE_ACTION_KEY, {})
+            if isinstance(actions, dict)
+            else {}
+        )
 
         tracking_error = 0.0
         action_projection_gap_mw = 0.0
@@ -151,17 +177,38 @@ class Simulator:
         powerflow_projection_rows: list[dict[str, Any]] = []
         candidate_dispatch_by_vpp: dict[str, dict[str, float]] = {}
         candidate_rows: list[dict[str, Any]] = []
+        envelope_width_ratios: list[float] = []
+        envelope_smoothness_values: list[float] = []
+        guidance_strength_values: list[float] = []
         for vpp in scenario.vpps:
             bid = vpp.day_ahead_bid(step, price_hint=price)
             fr = compute_static_feasible_region(vpp, step)
-            envelope = self._build_dso_operating_envelope(
+            envelope = self._build_dso_operating_envelope_for_policy(
                 vpp,
                 step,
                 bid,
                 fr,
                 price,
                 grid_state=pre_dispatch_grid_state,
+                actor_override=self._dso_actor_override_for_vpp(dso_envelope_guidance, vpp.id),
             )
+            hard_width = max(1e-9, float(envelope.get("p_max_mw", 0.0)) - float(envelope.get("p_min_mw", 0.0)))
+            preferred_width = max(
+                0.0,
+                float(envelope.get("preferred_p_max_mw", envelope.get("p_max_mw", 0.0)))
+                - float(envelope.get("preferred_p_min_mw", envelope.get("p_min_mw", 0.0))),
+            )
+            envelope_width_ratios.append(float(preferred_width / hard_width))
+            guidance_strength_values.append(float(envelope.get("guidance_strength_lambda", 0.0) or 0.0))
+            previous_target = None
+            for previous in reversed(self.records.get("dso_operating_envelope", [])):
+                if str(previous.get("vpp_id")) == str(vpp.id):
+                    previous_target = float(previous.get("preferred_target_p_mw", envelope.get("preferred_target_p_mw", 0.0)))
+                    break
+            if previous_target is not None:
+                envelope_smoothness_values.append(
+                    abs(float(envelope.get("preferred_target_p_mw", 0.0)) - previous_target)
+                )
             self.records["vpp_day_ahead_bid"].append({**bid, "time_label": self._time_label(step)})
             self.records["dso_operating_envelope"].append(envelope)
             (
@@ -323,8 +370,21 @@ class Simulator:
             row.update(certificate.to_dict())
         self.records["projection_trace"].extend(powerflow_projection_rows)
 
+        settlement_before_state = self._capture_settlement_before_state(step)
         for vpp in scenario.vpps:
             vpp.update_dynamic_states(step, scenario.dt_hours)
+
+        dispatch_cfg = scenario.dso.reward_config.vpp.dispatch
+        der_settlement_rows, vpp_settlement_summaries = build_settlement_audit(
+            vpps=scenario.vpps,
+            t=step,
+            dt_hours=float(scenario.dt_hours),
+            market_price=float(price),
+            before_state=settlement_before_state,
+            settlement_power_balance_tolerance_mw=float(dispatch_cfg.settlement_power_balance_tolerance_mw),
+        )
+        self.records["der_settlement_audit"].extend(der_settlement_rows)
+        self.records["vpp_settlement_summary"].extend(vpp_settlement_summaries.values())
 
         reward_components = scenario.dso.calculate_reward_or_cost(
             report,
@@ -336,6 +396,24 @@ class Simulator:
             ac_certified_projection_gap_mw=ac_certified_projection_gap_mw,
             ac_certificate_failed_count=int(not certificate.ac_safe),
             action_projection_count=action_projection_count,
+            mean_envelope_width_ratio=(
+                float(np.mean(envelope_width_ratios)) if envelope_width_ratios else 0.0
+            ),
+            envelope_smoothness_mw=(
+                float(np.mean(envelope_smoothness_values)) if envelope_smoothness_values else 0.0
+            ),
+            mean_guidance_strength_lambda=(
+                float(np.mean(guidance_strength_values)) if guidance_strength_values else 0.0
+            ),
+            vpp_settlement_summaries=vpp_settlement_summaries,
+            raw_action_voltage_violation_cost=float(certificate.candidate_voltage_violation_cost),
+            raw_action_line_overload_cost=float(certificate.candidate_line_overload_cost),
+            raw_action_trafo_overload_cost=float(certificate.candidate_trafo_overload_cost),
+            raw_action_powerflow_failed=float(certificate.candidate_powerflow_failure_cost),
+            projected_action_voltage_violation_cost=float(certificate.repaired_voltage_violation_cost),
+            projected_action_line_overload_cost=float(certificate.repaired_line_overload_cost),
+            projected_action_trafo_overload_cost=float(certificate.repaired_trafo_overload_cost),
+            projected_action_powerflow_failed=float(certificate.repaired_powerflow_failure_cost),
         )
         self._record_step(step, report, reward_components, price, load_scale, pv_forecast_factor)
         return {
@@ -344,10 +422,29 @@ class Simulator:
             "converged": report.converged,
             "violations": report.to_records(step),
             "reward_components": reward_components,
+            "der_settlement_audit": der_settlement_rows,
+            "vpp_settlement_summaries": vpp_settlement_summaries,
         }
 
     def _time_label(self, step: int) -> str:
         return f"{float(step) * float(self.scenario.dt_hours):05.2f} h"
+
+    def _capture_settlement_before_state(self, step: int) -> dict[str, dict[str, Any]]:
+        state: dict[str, dict[str, Any]] = {}
+        for vpp in self.scenario.vpps:
+            for der in vpp.der_list:
+                der_id = str(getattr(der, "id", ""))
+                row: dict[str, Any] = {}
+                if isinstance(der, StorageModel):
+                    row["soc"] = float(getattr(der, "soc", 0.0))
+                if isinstance(der, EVCSModel):
+                    row["average_soc"] = float(der.average_soc())
+                    row["connected_evs"] = len(der.connected_evs(step))
+                if isinstance(der, HVACModel):
+                    row["indoor_temp"] = float(getattr(der, "indoor_temp", 0.0))
+                if row:
+                    state[der_id] = row
+        return state
 
     def _project_target_to_ac_aware_envelope(self, target_p_mw: float, envelope: dict[str, Any]) -> float:
         return float(
@@ -356,6 +453,48 @@ class Simulator:
                 min(float(envelope.get("p_max_mw", target_p_mw)), float(target_p_mw)),
             )
         )
+
+    def _build_dso_operating_envelope_for_policy(
+        self,
+        vpp,
+        step: int,
+        bid: dict[str, Any],
+        fr,
+        price: float,
+        grid_state: dict[str, Any] | None = None,
+        actor_override: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if self._dso_envelope_policy is None:
+            self._dso_envelope_policy = build_dso_envelope_policy(self.scenario.config)
+        if getattr(self._dso_envelope_policy, "policy_name", "") != "sensitivity_attention_v1":
+            return self._dso_envelope_policy.build(
+                self,
+                vpp,
+                step,
+                bid,
+                fr,
+                price,
+                grid_state=grid_state,
+            )
+        return self._dso_envelope_policy.build(
+            self,
+            vpp,
+            step,
+            bid,
+            fr,
+            price,
+            grid_state=grid_state,
+            actor_override=actor_override,
+        )
+
+    def _dso_actor_override_for_vpp(self, guidance: Any, vpp_id: str) -> dict[str, Any] | None:
+        if not isinstance(guidance, dict) or not guidance:
+            return None
+        by_vpp = guidance.get("by_vpp")
+        if isinstance(by_vpp, dict):
+            payload = by_vpp.get(str(vpp_id))
+            return dict(payload) if isinstance(payload, dict) else None
+        return dict(guidance)
 
     def _tighten_dso_envelope_with_ac_sensitivity(
         self,

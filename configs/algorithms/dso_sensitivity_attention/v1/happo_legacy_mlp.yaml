@@ -1,0 +1,60 @@
+name: happo_legacy_mlp
+
+network:
+  type: lv_taiqu
+  voltage_limits: [0.95, 1.05]
+  line_loading_limit_percent: 100
+  trafo_loading_limit_percent: 100
+
+simulation:
+  horizon_steps: 96
+  dt_hours: 0.25
+  seed: 0
+
+profiles:
+  load_profile_csv: data/profiles/load_profile.csv
+  pv_profile_csv: data/profiles/pv_profile.csv
+  price_profile_csv: data/profiles/price_profile.csv
+
+dso:
+  envelope_policy: rule_v0
+  observation_mode: legacy_flat
+  action_unit_granularity: vpp_pcc
+  enable_q_channels: false
+  enable_rule_warmstart: true
+
+trainer:
+  name: happo
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_param: 0.2
+  target_kl: 0.02
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  normalize_observations: true
+  normalize_advantages: true
+  nan_guard: true
+  device: auto
+
+vpps:
+  - id: taiqu_vpp_0
+    name: LV feeder VPP
+    pcc_bus: 3
+    assets:
+      pv:
+        - id: lv_pv_0
+          bus: 3
+          p_max_mw: 0.08
+          apparent_power_mva: 0.10
+      storage:
+        - id: lv_ess_0
+          bus: 4
+          capacity_mwh: 0.20
+          soc: 0.55
+          p_charge_max_mw: 0.05
+          p_discharge_max_mw: 0.05
+      evcs:
+        - id: lv_evcs_0
+          bus: 5
+          n_evs: 8
+          p_charge_max_mw: 0.08

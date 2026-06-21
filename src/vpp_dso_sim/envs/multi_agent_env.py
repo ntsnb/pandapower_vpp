@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from vpp_dso_sim.envs.observations import build_actor_observation, build_critic_global_state
-from vpp_dso_sim.envs.reward_design import build_role_reward_maps
+from vpp_dso_sim.envs.reward_design import PortfolioWindowTracker, build_role_reward_maps
 from vpp_dso_sim.learning.agent_roles import build_agent_role_map, build_encoder_role_map
 from vpp_dso_sim.learning.ctde_interface import (
     CTDEInterfaceContract,
@@ -15,6 +15,9 @@ from vpp_dso_sim.learning.ctde_interface import (
 from vpp_dso_sim.optimization.feasibility_region import compute_static_feasible_region
 from vpp_dso_sim.simulation.scenario import load_scenario
 from vpp_dso_sim.simulation.simulator import Simulator
+
+
+DSO_ENVELOPE_GUIDANCE_ACTION_KEY = "__dso_envelope_guidance__"
 
 
 @dataclass
@@ -133,6 +136,7 @@ class MultiAgentVPPDSOEnv:
         self.possible_agents = list(self.agents)
         self.last_info: dict[str, Any] = {}
         self.default_ctde_contract = self.ctde_interface_contract()
+        self.portfolio_window_tracker = PortfolioWindowTracker(self.scenario.dso.reward_config)
 
     def policy_compatibility_signature(self) -> dict[str, Any]:
         der_counts = {vpp.id: len(vpp.der_list) for vpp in self.scenario.vpps}
@@ -209,7 +213,7 @@ class MultiAgentVPPDSOEnv:
         price = self.simulator._profile_value(self.scenario.price_profile, t)
         bid = vpp.day_ahead_bid(t, price_hint=price)
         fr = compute_static_feasible_region(vpp, t)
-        return self.simulator._build_dso_operating_envelope(vpp, t, bid, fr, price)
+        return self.simulator._build_dso_operating_envelope_for_policy(vpp, t, bid, fr, price)
 
     def _observations(self, t: int) -> dict[str, dict[str, Any]]:
         obs: dict[str, dict[str, Any]] = {"dso_global_guidance": self._dso_observation(t)}
@@ -240,6 +244,8 @@ class MultiAgentVPPDSOEnv:
             return {}
         raw = actions.get("dso_global_guidance", {})
         if isinstance(raw, dict):
+            if "envelope_action" in raw:
+                return {}
             if "targets" in raw and isinstance(raw["targets"], dict):
                 return {str(key): float(value) for key, value in raw["targets"].items()}
             return {
@@ -264,6 +270,27 @@ class MultiAgentVPPDSOEnv:
             }
         except Exception:
             return {}
+
+    def _decode_dso_envelope_action(self, actions: dict[str, Any] | None) -> dict[str, Any]:
+        if not actions:
+            return {}
+        raw = actions.get("dso_global_guidance", {})
+        if not isinstance(raw, dict):
+            return {}
+        envelope_action = raw.get("envelope_action")
+        return dict(envelope_action) if isinstance(envelope_action, dict) else {}
+
+    def _uses_sensitivity_attention_envelope(self) -> bool:
+        dso_cfg = dict(self.scenario.config.get("dso", {}))
+        return str(dso_cfg.get("envelope_policy", "")) == "sensitivity_attention_v1"
+
+    def _legacy_targets_to_unified_envelope_action(self, dso_targets: dict[str, float]) -> dict[str, Any]:
+        if not dso_targets:
+            return {}
+        return {
+            "source": "legacy_targets_converted_to_unified_envelope",
+            "legacy_targets_by_vpp": {str(key): float(value) for key, value in dso_targets.items()},
+        }
 
     def _decode_dispatch_targets(
         self,
@@ -321,12 +348,19 @@ class MultiAgentVPPDSOEnv:
                 "der_actions": der_actions,
                 "command_source": "vpp_rl_envelope_action" if der_actions is not None else "vpp_rl_aggregate_action",
                 "action_mode": "learned_der_disaggregation" if der_actions is not None else "aggregate_target_bias",
+                "raw_action_norm": float(bias),
+                "decoded_target_p_mw": float(bias_target),
+                "raw_target_p_mw": float(bias_target),
                 "pre_projection_gap_mw": projection_gap,
                 "pre_projection_clipped": bool(projection_gap > 1e-9),
             }
             audit[vpp.id] = {
                 "dso_target_p_mw": previous,
+                "baseline_p_mw": previous,
                 "dispatch_bias": float(bias),
+                "raw_action_norm": float(bias),
+                "raw_target_p_mw": float(bias_target),
+                "decoded_target_p_mw": float(bias_target),
                 "dispatch_adjusted_target_p_mw": float(bias_target),
                 "projected_target_p_mw": projected,
                 "projection_gap_mw": projection_gap,
@@ -339,6 +373,52 @@ class MultiAgentVPPDSOEnv:
                 "uses_learned_der_actions": der_actions is not None,
             }
         return simulator_actions, audit
+
+    def _action_landing_audit_from_records(self, step: int) -> dict[str, dict[str, Any]]:
+        """Summarize simulator projection stages into per-VPP landing fields."""
+
+        stage_rows: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in self.simulator.records.get("projection_trace", []):
+            try:
+                row_step = int(float(row.get("step", -1)))
+            except (TypeError, ValueError):
+                continue
+            if row_step != int(step):
+                continue
+            vpp_id = str(row.get("vpp_id", ""))
+            stage_name = str(row.get("stage_name", ""))
+            if not vpp_id or not stage_name:
+                continue
+            stage_rows.setdefault(vpp_id, {})[stage_name] = dict(row)
+
+        landing: dict[str, dict[str, Any]] = {}
+        for vpp_id, by_stage in stage_rows.items():
+            raw = self._stage_p_mw(by_stage, "raw_action", 0.0)
+            device = self._stage_p_mw(by_stage, "device_bounds", raw)
+            pre_ac = self._stage_p_mw(by_stage, "fr_doe", device)
+            ac_projected = self._stage_p_mw(by_stage, "ac_aware_doe", pre_ac)
+            ac_certified = self._stage_p_mw(by_stage, "ac_pf_certificate", ac_projected)
+            actual = self._stage_p_mw(by_stage, "powerflow_result", ac_certified)
+            landing[vpp_id] = {
+                "raw_target_p_mw": float(raw),
+                "device_feasible_target_p_mw": float(device),
+                "pre_ac_target_p_mw": float(pre_ac),
+                "ac_projected_target_p_mw": float(ac_projected),
+                "ac_certified_target_p_mw": float(ac_certified),
+                "actual_target_p_mw": float(actual),
+                "raw_to_device_gap_mw": abs(float(device) - float(raw)),
+                "device_to_ac_gap_mw": abs(float(ac_projected) - float(device)),
+                "ac_to_actual_gap_mw": abs(float(actual) - float(ac_projected)),
+            }
+        return landing
+
+    @staticmethod
+    def _stage_p_mw(by_stage: dict[str, dict[str, Any]], stage_name: str, default: float) -> float:
+        row = by_stage.get(stage_name, {})
+        try:
+            return float(row.get("p_mw", default))
+        except (TypeError, ValueError):
+            return float(default)
 
     def _envelopes_from_records(self, step: int) -> dict[str, dict[str, Any]]:
         envelopes: dict[str, dict[str, Any]] = {}
@@ -366,28 +446,60 @@ class MultiAgentVPPDSOEnv:
         actions: dict[str, Any] | None,
         step: int,
     ) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+        dispatch_audit = {
+            str(vpp_id): dict(payload)
+            for vpp_id, payload in dict(dispatch_adjustments or {}).items()
+        }
+        for vpp_id, landing_payload in self._action_landing_audit_from_records(step).items():
+            target = dispatch_audit.setdefault(str(vpp_id), {})
+            for key, value in landing_payload.items():
+                if key in {"raw_target_p_mw", "decoded_target_p_mw"} and key in target:
+                    continue
+                target[key] = value
+        for vpp_id, summary in self._vpp_settlement_summaries_from_records(step).items():
+            dispatch_audit.setdefault(str(vpp_id), {}).update(summary)
         rewards, components = build_role_reward_maps(
             vpps=self.scenario.vpps,
             envelopes_by_vpp=self._envelopes_from_records(step),
-            dispatch_audit=dispatch_adjustments,
+            dispatch_audit=dispatch_audit,
             portfolio_actions_by_vpp=self._portfolio_actions_by_vpp(actions),
             dso_components=reward_components,
             dt_hours=float(self.scenario.dt_hours),
             t=int(step),
+            reward_config=self.scenario.dso.reward_config,
+            portfolio_tracker=self.portfolio_window_tracker,
         )
         return (
             {agent: float(rewards.get(agent, 0.0)) for agent in self.agents},
             {agent: components.get(agent, {}) for agent in self.agents},
         )
 
+    def _vpp_settlement_summaries_from_records(self, step: int) -> dict[str, dict[str, Any]]:
+        summaries: dict[str, dict[str, Any]] = {}
+        for row in self.simulator.records.get("vpp_settlement_summary", []):
+            try:
+                row_step = int(float(row.get("step", -1)))
+            except (TypeError, ValueError):
+                continue
+            if row_step == int(step):
+                summaries[str(row.get("vpp_id"))] = dict(row)
+        return summaries
+
     def validate_action_payload(self, actions: dict[str, Any] | None) -> dict[str, Any]:
         return validate_multi_agent_actions(actions, self.scenario.vpps).to_dict()
 
-    def reset(self, seed: int | None = None) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    def reset(
+        self,
+        seed: int | None = None,
+        start_step: int = 0,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         if seed is not None:
             self.scenario.seed = int(seed)
         self.simulator.reset()
-        self.current_step = 0
+        self.portfolio_window_tracker.reset()
+        safe_horizon = max(1, int(self.scenario.horizon_steps))
+        self.current_step = int(start_step) % safe_horizon
+        self.simulator.current_step = int(self.current_step)
         infos = {
             agent: {
                 "agent_role_map": [role.to_dict() for role in build_agent_role_map(self.scenario.vpps)],
@@ -401,7 +513,7 @@ class MultiAgentVPPDSOEnv:
             }
             for agent in self.agents
         }
-        return self._observations(0), infos
+        return self._observations(self.current_step), infos
 
     def step(
         self,
@@ -415,11 +527,19 @@ class MultiAgentVPPDSOEnv:
     ]:
         action_validation = validate_multi_agent_actions(actions, self.scenario.vpps)
         validated_actions = action_validation.normalized_actions
-        dso_targets = self._decode_dso_targets(validated_actions)
-        simulator_actions, dispatch_adjustments = self._decode_dispatch_targets(dso_targets, validated_actions)
+        dso_envelope_action = self._decode_dso_envelope_action(validated_actions)
+        dso_targets = {} if dso_envelope_action else self._decode_dso_targets(validated_actions)
+        simulator_dso_targets = dso_targets
+        if not dso_envelope_action and dso_targets and self._uses_sensitivity_attention_envelope():
+            dso_envelope_action = self._legacy_targets_to_unified_envelope_action(dso_targets)
+            simulator_dso_targets = {}
+        simulator_actions, dispatch_adjustments = self._decode_dispatch_targets(simulator_dso_targets, validated_actions)
+        if dso_envelope_action:
+            simulator_actions[DSO_ENVELOPE_GUIDANCE_ACTION_KEY] = dso_envelope_action
         decoded_numeric_targets = {
             vpp_id: float(payload.get("selected_p_mw", 0.0))
             for vpp_id, payload in simulator_actions.items()
+            if isinstance(payload, dict) and vpp_id != DSO_ENVELOPE_GUIDANCE_ACTION_KEY
         }
         result = self.simulator.step(self.current_step, actions=simulator_actions or None)
         self.current_step = int(result["step"]) + 1
@@ -439,6 +559,7 @@ class MultiAgentVPPDSOEnv:
             agent: {
                 "step": int(result["step"]),
                 "decoded_dso_targets": dso_targets,
+                "decoded_dso_envelope_action": dso_envelope_action,
                 "decoded_simulator_targets": decoded_numeric_targets,
                 "decoded_simulator_action_payload": simulator_actions,
                 "decoded_vpp_dispatch_adjustments": dispatch_adjustments,

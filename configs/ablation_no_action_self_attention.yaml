@@ -1,0 +1,3 @@
+# Compatibility wrapper. Canonical file:
+# configs/algorithms/dso_sensitivity_attention/v1/ablation_no_action_self_attention.yaml
+extends: configs/algorithms/dso_sensitivity_attention/v1/ablation_no_action_self_attention.yaml

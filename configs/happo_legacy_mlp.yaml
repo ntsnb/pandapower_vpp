@@ -1,0 +1,3 @@
+# Compatibility wrapper. Canonical file:
+# configs/algorithms/dso_sensitivity_attention/v1/happo_legacy_mlp.yaml
+extends: configs/algorithms/dso_sensitivity_attention/v1/happo_legacy_mlp.yaml

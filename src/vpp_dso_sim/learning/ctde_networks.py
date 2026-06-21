@@ -122,7 +122,20 @@ def build_privacy_separated_ctde_modules(
     action_dim: int,
     der_action_dim: int,
     hidden_dim: int,
+    dispatch_actor_encoder_type: str = "deepset_v1",
+    dispatch_actor_attention_heads: int = 4,
 ) -> tuple[Any, dict[str, Any]]:
+    normalized_dispatch_encoder = str(dispatch_actor_encoder_type).strip().lower()
+    if normalized_dispatch_encoder in {"deepset", "deep_sets", "deep_sets_shared_token_mlp"}:
+        normalized_dispatch_encoder = "deepset_v1"
+    if normalized_dispatch_encoder in {"attention", "set_attention", "masked_self_attention"}:
+        normalized_dispatch_encoder = "set_attention_v1"
+    if normalized_dispatch_encoder not in {"deepset_v1", "set_attention_v1"}:
+        raise ValueError(
+            "dispatch_actor_encoder_type must be one of 'deepset_v1' or 'set_attention_v1', "
+            f"got {dispatch_actor_encoder_type!r}."
+        )
+
     class MLPEncoder(nn.Module):
         def __init__(self, input_dim: int) -> None:
             super().__init__()
@@ -183,6 +196,125 @@ def build_privacy_separated_ctde_modules(
             fused = torch.cat([context_latent, token_mean, token_max, count_ratio], dim=-1)
             return self.fusion(fused)
 
+    class SetAttentionDispatchEncoder(nn.Module):
+        def __init__(self, input_dim: int) -> None:
+            super().__init__()
+            token_width = max(0, input_dim - VPP_DISPATCH_CONTEXT_DIM)
+            token_count = token_width // VPP_DISPATCH_TOKEN_DIM
+            self.context_dim = VPP_DISPATCH_CONTEXT_DIM
+            self.token_dim = VPP_DISPATCH_TOKEN_DIM
+            self.token_count = token_count
+            self.context_norm = nn.LayerNorm(self.context_dim)
+            self.context_mlp = nn.Sequential(
+                nn.Linear(self.context_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+            )
+            self.token_norm = nn.LayerNorm(self.token_dim)
+            self.token_mlp = nn.Sequential(
+                nn.Linear(self.token_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+            )
+            requested_heads = max(1, int(dispatch_actor_attention_heads))
+            heads = min(requested_heads, max(1, hidden_dim))
+            while hidden_dim % heads != 0 and heads > 1:
+                heads -= 1
+            self.attention_heads = heads
+            self.head_dim = hidden_dim // heads
+            self.q_proj = nn.Linear(hidden_dim, hidden_dim)
+            self.k_proj = nn.Linear(hidden_dim, hidden_dim)
+            self.v_proj = nn.Linear(hidden_dim, hidden_dim)
+            self.out_proj = nn.Linear(hidden_dim, hidden_dim)
+            self.attention_norm = nn.LayerNorm(hidden_dim)
+            self.token_ffn = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim * 2),
+                nn.SiLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim),
+            )
+            self.token_ffn_norm = nn.LayerNorm(hidden_dim)
+            self.context_query = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            self.fusion = nn.Sequential(
+                nn.Linear(hidden_dim * 4 + 1, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+            )
+
+        def _split(self, x):
+            context = x[:, : self.context_dim]
+            token_flat = x[:, self.context_dim :]
+            tokens = token_flat.reshape(x.shape[0], self.token_count, self.token_dim)
+            mask = tokens.abs().sum(dim=-1) > 1e-9
+            return context, tokens, mask
+
+        def forward_with_tokens(self, x):
+            context, tokens, mask = self._split(x)
+            context_latent = self.context_mlp(self.context_norm(context))
+            token_latent = self.token_mlp(self.token_norm(tokens))
+            valid_key_mask = mask
+            empty_rows = ~mask.any(dim=1)
+            if bool(empty_rows.any()):
+                valid_key_mask = valid_key_mask.clone()
+                valid_key_mask[empty_rows] = True
+            batch_size, token_count, _ = token_latent.shape
+            query = self.q_proj(token_latent).reshape(
+                batch_size,
+                token_count,
+                self.attention_heads,
+                self.head_dim,
+            ).transpose(1, 2)
+            key = self.k_proj(token_latent).reshape(
+                batch_size,
+                token_count,
+                self.attention_heads,
+                self.head_dim,
+            ).transpose(1, 2)
+            value = self.v_proj(token_latent).reshape(
+                batch_size,
+                token_count,
+                self.attention_heads,
+                self.head_dim,
+            ).transpose(1, 2)
+            attention_scores = torch.matmul(query, key.transpose(-2, -1)) / max(1.0, float(self.head_dim) ** 0.5)
+            attention_scores = attention_scores.masked_fill(~valid_key_mask[:, None, None, :], -1e9)
+            attention_weights = torch.softmax(attention_scores, dim=-1)
+            attended = torch.matmul(attention_weights, value).transpose(1, 2).reshape(batch_size, token_count, hidden_dim)
+            attended = self.out_proj(attended)
+            token_latent = self.attention_norm(token_latent + attended)
+            token_latent = self.token_ffn_norm(token_latent + self.token_ffn(token_latent))
+            mask_f = mask.unsqueeze(-1).float()
+            token_count = mask_f.sum(dim=1).clamp(min=1.0)
+            token_mean = (token_latent * mask_f).sum(dim=1) / token_count
+            masked_max = token_latent.masked_fill(~mask.unsqueeze(-1), -1e9)
+            token_max = masked_max.max(dim=1).values
+            token_max = torch.where(mask.any(dim=1, keepdim=True), token_max, torch.zeros_like(token_max))
+            query = self.context_query(context_latent).unsqueeze(1)
+            query_scores = (token_latent * query).sum(dim=-1) / max(1.0, float(hidden_dim) ** 0.5)
+            query_scores = query_scores.masked_fill(~mask, -1e9)
+            query_weights = torch.softmax(query_scores, dim=1).unsqueeze(-1)
+            query_weights = torch.where(mask.unsqueeze(-1), query_weights, torch.zeros_like(query_weights))
+            query_weight_sum = query_weights.sum(dim=1).clamp(min=1e-6)
+            context_pooled = (token_latent * query_weights).sum(dim=1) / query_weight_sum
+            context_pooled = torch.where(
+                mask.any(dim=1, keepdim=True),
+                context_pooled,
+                torch.zeros_like(context_pooled),
+            )
+            count_ratio = token_count / max(1.0, float(self.token_count))
+            fused = torch.cat([context_latent, token_mean, token_max, context_pooled, count_ratio], dim=-1)
+            return self.fusion(fused), token_latent, mask
+
+        def forward(self, x):
+            latent, _, _ = self.forward_with_tokens(x)
+            return latent
+
     class DSOActor(nn.Module):
         def __init__(self) -> None:
             super().__init__()
@@ -198,16 +330,53 @@ def build_privacy_separated_ctde_modules(
     class VPPDispatchActor(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.encoder = DeepSetDispatchEncoder(vpp_input_dim)
+            self.encoder_type = normalized_dispatch_encoder
+            self.der_action_dim = int(der_action_dim)
+            if self.encoder_type == "set_attention_v1":
+                self.encoder = SetAttentionDispatchEncoder(vpp_input_dim)
+                self.der_token_mean = nn.Linear(hidden_dim, 1)
+            else:
+                self.encoder = DeepSetDispatchEncoder(vpp_input_dim)
+                self.der_mean = nn.Linear(hidden_dim, der_action_dim)
             self.aggregate_mean = nn.Linear(hidden_dim, 1)
             self.aggregate_log_std = nn.Parameter(torch.full((1,), -0.8))
-            self.der_mean = nn.Linear(hidden_dim, der_action_dim)
             self.der_log_std = nn.Parameter(torch.full((der_action_dim,), -0.8))
 
+        def _pad_or_trim_der_actions(self, der_mean, mask=None):
+            if der_mean.shape[1] < self.der_action_dim:
+                pad_width = self.der_action_dim - der_mean.shape[1]
+                der_mean = torch.cat(
+                    [
+                        der_mean,
+                        torch.zeros(der_mean.shape[0], pad_width, dtype=der_mean.dtype, device=der_mean.device),
+                    ],
+                    dim=1,
+                )
+                if mask is not None:
+                    mask = torch.cat(
+                        [
+                            mask,
+                            torch.zeros(mask.shape[0], pad_width, dtype=torch.bool, device=mask.device),
+                        ],
+                        dim=1,
+                    )
+            elif der_mean.shape[1] > self.der_action_dim:
+                der_mean = der_mean[:, : self.der_action_dim]
+                if mask is not None:
+                    mask = mask[:, : self.der_action_dim]
+            if mask is not None:
+                der_mean = torch.where(mask, der_mean, torch.zeros_like(der_mean))
+            return der_mean
+
         def forward(self, x):
-            latent = self.encoder(x)
+            if self.encoder_type == "set_attention_v1":
+                latent, token_latent, mask = self.encoder.forward_with_tokens(x)
+                der_mean = torch.tanh(self.der_token_mean(token_latent).squeeze(-1))
+                der_mean = self._pad_or_trim_der_actions(der_mean, mask)
+            else:
+                latent = self.encoder(x)
+                der_mean = torch.tanh(self.der_mean(latent))
             aggregate_mean = torch.tanh(self.aggregate_mean(latent))
-            der_mean = torch.tanh(self.der_mean(latent))
             return (
                 aggregate_mean,
                 self.aggregate_log_std.expand_as(aggregate_mean),
@@ -262,9 +431,17 @@ def build_privacy_separated_ctde_modules(
             "centralized_critic": CentralizedActionConditionedCritic(),
         }
     )
+    if normalized_dispatch_encoder == "set_attention_v1":
+        architecture_version = "ctde_v3_set_attention_action_conditioned"
+        vpp_encoder_type = "set_attention_v1_masked_self_attention"
+    else:
+        architecture_version = "ctde_v2_deepsets_action_conditioned"
+        vpp_encoder_type = "deep_sets_shared_token_mlp"
     metadata = {
-        "architecture_version": "ctde_v2_deepsets_action_conditioned",
-        "vpp_encoder_type": "deep_sets_shared_token_mlp",
+        "architecture_version": architecture_version,
+        "vpp_encoder_type": vpp_encoder_type,
+        "dispatch_actor_encoder_type": normalized_dispatch_encoder,
+        "dispatch_actor_attention_heads": int(dispatch_actor_attention_heads),
         "critic_type": "centralized_action_conditioned_summary_critic",
         "critic_head_type": "role_multi_head_value_baselines",
         "critic_value_heads": "dso,dispatch,portfolio",

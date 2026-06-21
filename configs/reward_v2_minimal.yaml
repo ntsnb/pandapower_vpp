@@ -1,0 +1,3 @@
+# Compatibility wrapper. Canonical file:
+# configs/rewards/v2_minimal/reward_v2_minimal.yaml
+extends: configs/rewards/v2_minimal/reward_v2_minimal.yaml

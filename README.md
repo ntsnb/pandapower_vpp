@@ -1,5 +1,17 @@
 # pandapower-vpp-dso-sim
 
+## MARL VPP Dashboard / 多智能体 VPP 实验平台
+
+本仓库包含本地实时训练可视化平台 `marl_dashboard`。默认只绑定 `127.0.0.1`，用于展示 run、epoch、episode、date、time_index、VPP、dataset、reward/cost/loss 拆项、变量字典、公式、pandapower 拓扑和 VPP 配置。
+
+快速 demo：
+
+```bash
+marl-dashboard demo --data-dir runs --host 127.0.0.1 --port 8765
+```
+
+真实训练接入使用 `ExperimentLogger` 和 `start_dashboard`，训练侧在 `env.step` 后记录 dataset/reward/cost，在 learner update 后记录 loss，在 episode/epoch 结束后记录 scalar/event。完整启动方式、logger API、Parquet/DuckDB schema、epoch/episode/batch/trajectory/gradient_step/global_env_step 概念说明见 [`src/marl_dashboard/README.md`](src/marl_dashboard/README.md)。
+
 ## 2026-05-03 Hierarchical MARL Final-Shape Update / 分层 MARL 最终形态更新
 
 本轮将默认 HAPPO 路线调整为更贴近研究设定的异质分层结构，而不是共享 VPP actor 的工程原型：
@@ -612,6 +624,20 @@ python examples/17_paper_training_experiment.py --preset paper_long --output-dir
 python examples/17_paper_training_experiment.py --preset paper_long --output-dir outputs/paper_training_long_fresh --checkpoint-selection both --progress-interval-seconds 60
 ```
 
+当前 DSO `sensitivity_attention_v1` + 结构化 HAPPO 主线请优先使用新的 paper-long preset：
+
+```powershell
+python examples/17_paper_training_experiment.py --preset paper_long_sensitivity_v1 --output-dir outputs/paper_training_long_sensitivity_v1_20260528 --progress-interval-seconds 60
+```
+
+正式长周期前建议先跑 2-step preflight：
+
+```powershell
+python examples/17_paper_training_experiment.py --preset paper_long_sensitivity_v1 --output-dir outputs/paper_training_long_sensitivity_v1_preflight_smoke --seeds 9401 --horizon-steps 2 --eval-horizon-steps 2 --train-episodes 1 --hparam-cases base --algorithms rule_based,no_flex,happo --checkpoint-selection final --no-html --no-tensorboard --progress-interval-seconds 60
+```
+
+改造过程、实验过程、reward/loss/KL/entropy/grad norm 曲线口径和产物位置记录在 `docs/experiments/paper_long_sensitivity_v1_protocol.md`。
+
 不要直接复用旧的 `outputs/paper_training_long_current` 结果作为论文指标，尤其是其中仍包含旧 `opf_oracle_proxy` 或旧诊断结果时。新协议会在发现旧 manifest 含 legacy oracle proxy 时拒绝继续复用；`paper_long` 在未开启 `--resume-completed` 时也会拒绝写入非空输出目录，避免 TensorBoard/event/csv 混入旧实验。
 
 长周期训练默认不会刷屏。若当前终端支持交互刷新并已安装 `tqdm`，脚本会自动显示两层动态进度条：
@@ -734,17 +760,31 @@ python examples/17_paper_training_experiment.py --preset paper_long --output-dir
 - `outputs/dashboard_data/dso_operating_envelope.csv`
 - `outputs/dashboard_data/vpp_rl_disaggregation.csv`
 
+## 仓库布局与路径兼容
+
+配置文件已经按用途和版本整理到规范目录：
+
+- `configs/scenarios/demo/`：demo、smoke 和小型场景。
+- `configs/scenarios/benchmark/`：benchmark 主场景和 holdout/safety-tight 变体。
+- `configs/algorithms/dso_sensitivity_attention/v1/`：DSO sensitivity-attention v1、legacy MLP、rule baseline 和 ablation 配置。
+- `configs/rewards/v2_minimal/`：可复用 reward 配置片段。
+- `configs/experiments/paper_long/sensitivity_attention_v1/`：paper-long sensitivity-v1 实验配置和 reward 变体。
+
+根目录下的 `configs/*.yaml` 仍然保留为兼容 wrapper，旧命令和旧实验 manifest 可以继续使用原路径。新脚本优先使用规范路径或 `configs/registry.yaml` 中的 alias，例如 `happo_sensitivity_attention_v1`、`reward_v2_minimal`、`paper_long_sensitivity_v1_reward_v2_minimal`。
+
+已结束或临时的输出目录归档到 `outputs/_archive/`，迁移记录在 `outputs/_manifests/output_archive_manifest.csv`。当前仍在运行的 paper-long 目录会保持在 `outputs/` 根层，避免破坏训练写入。`outputs/dashboard_data/`、`outputs/figures/`、`outputs/interactive_report.html`、`outputs/rl_architecture.html` 和 `outputs/vpp_first_person/` 仍作为可视化固定入口保留。
+
 ## 项目结构
 
 ```text
 pandapower-vpp-dso-sim/
-  configs/                 YAML 场景配置
+  configs/                 YAML 兼容入口、registry 和规范化配置目录
   agents/                  项目级 subagent 角色、重叠整合和 ppvpp-* 可注册草案
   data/profiles/           负荷、PV、电价等曲线
-  docs/                    架构、符号约定、建模假设、实验审查、路线图
+  docs/                    架构、符号约定、建模假设、实验审查、路线图、报告和任务记录
   examples/                可运行示例脚本
   memory/                  长期规则、决策、经验、实验和用户偏好沉淀
-  outputs/                 仿真、训练和可视化输出
+  outputs/                 仿真、训练、可视化输出；已结束产物位于 outputs/_archive/
   src/vpp_dso_sim/
     dashboard/             Dash 只读仪表盘
     der/                   DER 物理/逻辑模型

@@ -1,0 +1,19 @@
+{
+  "algorithm": "happo_sequential_ctde",
+  "evaluation_mode": "frozen_mean_argmax_actor",
+  "dso_actor_observation_mode": "structured_bipartite",
+  "dso_actor_type": "sensitivity_attention_v1_structured_happo",
+  "structured_dso_actor_loaded": true,
+  "normalize_observations": true,
+  "checkpoint": "outputs/dso_sensitivity_attention/happo_structured_minimal_seed0_current/happo_best_checkpoint.pt",
+  "horizon_steps": 2,
+  "seed": 1,
+  "total_reward": 5.655994539527365,
+  "total_cost": 1.6341365382859143,
+  "total_violation_count": 0,
+  "portfolio_action_counts": {
+    "keep": 1,
+    "reweight": 1,
+    "propose_membership_change": 0
+  }
+}

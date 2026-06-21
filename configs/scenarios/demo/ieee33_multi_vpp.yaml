@@ -1,0 +1,86 @@
+network:
+  type: ieee33
+  voltage_limits: [0.95, 1.05]
+  line_loading_limit_percent: 100
+  trafo_loading_limit_percent: 100
+
+simulation:
+  horizon_steps: 288
+  dt_hours: 0.25
+  seed: 42
+
+profiles:
+  load_profile_csv: data/profiles/load_profile.csv
+  pv_profile_csv: data/profiles/pv_profile.csv
+  price_profile_csv: data/profiles/price_profile.csv
+
+vpps:
+  - id: vpp_0
+    name: Residential VPP
+    pcc_bus: 5
+    privacy_mode: full_information
+    assets:
+      pv:
+        - id: pv_0
+          bus: 5
+          p_max_mw: 0.45
+          apparent_power_mva: 0.50
+      storage:
+        - id: ess_0
+          bus: 6
+          capacity_mwh: 1.0
+          soc: 0.50
+          p_charge_max_mw: 0.25
+          p_discharge_max_mw: 0.25
+      flexible_load:
+        - id: flex_0
+          bus: 7
+          baseline_p_mw: 0.18
+          p_min_mw: 0.08
+          p_max_mw: 0.25
+  - id: vpp_1
+    name: Commercial VPP
+    pcc_bus: 15
+    privacy_mode: full_information
+    assets:
+      pv:
+        - id: pv_1
+          bus: 15
+          p_max_mw: 0.60
+          apparent_power_mva: 0.70
+      microturbine:
+        - id: mt_1
+          bus: 16
+          p_min_mw: 0.05
+          p_max_mw: 0.45
+          ramp_up_mw_per_step: 0.12
+          ramp_down_mw_per_step: 0.12
+      evcs:
+        - id: evcs_1
+          bus: 17
+          n_evs: 20
+          p_charge_max_mw: 0.35
+  - id: vpp_2
+    name: Mixed DER VPP
+    pcc_bus: 25
+    privacy_mode: full_information
+    assets:
+      pv:
+        - id: pv_2
+          bus: 25
+          p_max_mw: 0.50
+          apparent_power_mva: 0.55
+      storage:
+        - id: ess_2
+          bus: 26
+          capacity_mwh: 1.2
+          soc: 0.60
+          p_charge_max_mw: 0.30
+          p_discharge_max_mw: 0.30
+      hvac_aggregator:
+        - id: hvac_2
+          bus: 27
+          rated_power_mw: 0.22
+          indoor_temp: 24.0
+          temp_min: 22.0
+          temp_max: 26.0

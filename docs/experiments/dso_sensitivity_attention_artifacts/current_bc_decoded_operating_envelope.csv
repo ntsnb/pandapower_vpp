@@ -1,0 +1,4 @@
+action_unit_id,vpp_id,pcc_id,bus_id,p_hard_min_mw,p_hard_max_mw,p_pref_lo_mw,p_pref_target_mw,p_pref_hi_mw,direction_probs,guidance_strength_lambda,award_status,source
+taiqu_vpp_0:vpp_bus:bus_3,taiqu_vpp_0,pcc_3,3,0.0,0.0,0.0,0.0,0.0,"(0.998694121837616, 0.0006105761858634651, 0.0006952831754460931)",0.5018777847290039,envelope_guidance,sensitivity_attention_v1
+taiqu_vpp_0:vpp_bus:bus_4,taiqu_vpp_0,pcc_3,4,-0.05,0.05,-0.047476267814636236,-0.02997853457927704,-0.012480801343917849,"(0.9987058639526367, 0.0006153581198304892, 0.0006787193706259131)",0.5241943001747131,envelope_guidance,sensitivity_attention_v1
+taiqu_vpp_0:vpp_bus:bus_5,taiqu_vpp_0,pcc_3,5,-0.08,0.0,-0.07798941016197204,-0.0639857017993927,-0.04998199343681335,"(0.9987064599990845, 0.0006229117861948907, 0.0006706640706397593)",0.5271764397621155,envelope_guidance,sensitivity_attention_v1

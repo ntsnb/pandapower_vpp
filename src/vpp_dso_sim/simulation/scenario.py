@@ -14,6 +14,7 @@ from vpp_dso_sim.der.pv import PVModel
 from vpp_dso_sim.der.storage import StorageModel
 from vpp_dso_sim.entities.dso import DSO
 from vpp_dso_sim.entities.vpp import VPPAggregator
+from vpp_dso_sim.learning.reward_config import RewardConfig
 from vpp_dso_sim.network.builder import build_network
 from vpp_dso_sim.simulation.portfolio_events import PortfolioEvent, normalize_portfolio_events
 from vpp_dso_sim.simulation.profiles import (
@@ -74,6 +75,29 @@ def _profiles_from_config(
         _profile_from_config(config, "pv_profile", default_pv_profile, horizon_steps),
         _profile_from_config(config, "price_profile", default_price_profile, horizon_steps),
     )
+
+
+def _reward_component_weights_from_config(reward_config: dict[str, Any]) -> dict[str, float]:
+    weights = {
+        str(key): float(value)
+        for key, value in dict(reward_config.get("component_weights", {})).items()
+    }
+    dso_reward = dict(reward_config.get("dso", {}))
+    nested_map = {
+        "voltage_violation_weight": "voltage_violation_penalty",
+        "line_overload_weight": "line_overload_penalty",
+        "trafo_overload_weight": "transformer_overload_penalty",
+        "projection_gap_weight": "action_projection_penalty",
+        "envelope_width_weight": "envelope_width_penalty",
+        "envelope_width_penalty_weight": "envelope_width_penalty",
+        "smoothness_weight": "smoothness_penalty",
+        "comfort_violation_weight": "comfort_violation_penalty",
+        "soc_violation_weight": "soc_violation_penalty",
+    }
+    for source, target in nested_map.items():
+        if source in dso_reward:
+            weights[target] = float(dso_reward[source])
+    return weights
 
 
 def _apply_der_metadata(der, cfg: dict[str, Any]):
@@ -256,6 +280,7 @@ def load_scenario(config_path: str | Path | None = None) -> SimulationScenario:
     net = build_network(config)
     network_config = config.get("network", {})
     reward_config = config.get("reward", {})
+    resolved_reward_config = RewardConfig.from_dict(reward_config)
     dso = DSO(
         net=net,
         voltage_limits=tuple(network_config.get("voltage_limits", [0.95, 1.05])),
@@ -263,10 +288,7 @@ def load_scenario(config_path: str | Path | None = None) -> SimulationScenario:
         trafo_loading_limit_percent=float(network_config.get("trafo_loading_limit_percent", 100.0)),
         market_price_profile=price_profile,
         reward_privacy_mode=str(reward_config.get("privacy_mode", "oracle_system_cost")),
-        reward_component_weights={
-            str(key): float(value)
-            for key, value in dict(reward_config.get("component_weights", {})).items()
-        },
+        reward_component_weights=_reward_component_weights_from_config(reward_config),
         dso_reward_cost_scale=float(reward_config.get("dso_reward_cost_scale", 0.05)),
         security_violation_count_penalty=float(reward_config.get("security_violation_count_penalty", 0.0)),
         reward_component_scales={
@@ -274,7 +296,9 @@ def load_scenario(config_path: str | Path | None = None) -> SimulationScenario:
             for key, value in dict(reward_config.get("component_scales", {})).items()
         },
         reward_component_clip=float(reward_config.get("component_clip", 10.0)),
+        reward_config=resolved_reward_config,
     )
+    config["resolved_reward_config"] = resolved_reward_config.to_dict()
     vpps = _build_vpps(config, pv_profile, horizon_steps)
     for vpp in vpps:
         vpp.attach_assets_to_net(net)

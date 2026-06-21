@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from vpp_dso_sim.envs.multi_agent_env import MultiAgentVPPDSOEnv
 
 
@@ -136,4 +138,49 @@ def test_out_of_envelope_dispatch_is_penalized_after_projection():
     assert "post_ac_violation_count" in components
     assert components["action_projection_penalty"] > 0.0
     assert components["total_cost"] >= components["action_projection_penalty"]
+    env.close()
+
+
+def test_dispatch_agent_reward_components_include_action_landing_audit():
+    env = MultiAgentVPPDSOEnv(
+        config_path=Path("configs") / "european_lv_mixed_vpp.yaml",
+        horizon_steps=1,
+    )
+    observations, _ = env.reset(seed=13)
+    vpp = env.scenario.vpps[0]
+    dispatch_agent = f"{vpp.id}_dispatch"
+    envelope = observations[dispatch_agent]["operating_envelope"]
+    selected_p = float(envelope["preferred_target_p_mw"])
+    baseline_before = float(vpp.current_power_mw())
+
+    _, _, _, _, infos = env.step({dispatch_agent: {"selected_p_mw": selected_p}})
+
+    components = infos[dispatch_agent]["agent_reward_components"]
+    for key in (
+        "raw_action_norm",
+        "raw_target_p_mw",
+        "decoded_target_p_mw",
+        "device_feasible_target_p_mw",
+        "pre_ac_target_p_mw",
+        "ac_projected_target_p_mw",
+        "ac_certified_target_p_mw",
+        "actual_target_p_mw",
+        "raw_delta_p_mw",
+        "decoded_delta_p_mw",
+        "device_feasible_delta_p_mw",
+        "pre_ac_delta_p_mw",
+        "ac_projected_delta_p_mw",
+        "ac_certified_delta_p_mw",
+        "raw_to_device_gap_mw",
+        "device_to_ac_gap_mw",
+        "ac_to_actual_gap_mw",
+        "accepted_to_actual_gap_mw",
+        "actual_delta_nonzero_flag",
+        "action_landing_ratio",
+        "action_landing_drop_reason_code",
+    ):
+        assert key in components
+    assert components["baseline_p_mw"] == pytest.approx(baseline_before)
+    assert components["decoded_target_p_mw"] == pytest.approx(selected_p)
+    assert components["action_landing_ratio"] >= 0.0
     env.close()

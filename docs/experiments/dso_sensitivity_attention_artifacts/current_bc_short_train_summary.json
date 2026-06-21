@@ -1,0 +1,13 @@
+{
+  "config": "configs/happo_sensitivity_attention_v1.yaml",
+  "config_hash": "e42bb936edcc",
+  "seed": 0,
+  "steps_requested": 256,
+  "steps_completed": 256,
+  "output_dir": "outputs/dso_sensitivity_attention/sensitivity_attention_v1_short_train_seed0",
+  "loss_metrics": "outputs/dso_sensitivity_attention/sensitivity_attention_v1_short_train_seed0/dso_sensitivity_attention_short_train_loss_metrics.csv",
+  "checkpoint": "outputs/dso_sensitivity_attention/sensitivity_attention_v1_short_train_seed0/dso_sensitivity_attention_actor.pt",
+  "nan_or_inf_detected": false,
+  "initial_loss": 0.5577945709228516,
+  "final_loss": 0.00032648438354954123
+}

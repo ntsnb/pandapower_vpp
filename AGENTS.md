@@ -1200,3 +1200,62 @@ memory 更新情况
 ```
 
 默认中文回复。术语首次出现给中英对照。对研究方向有冲突时，先指出冲突，不要为了“能实现”而默默改研究问题。
+
+---
+
+## 20. DSO sensitivity_attention_v1 改造规则
+
+本节约束 `sensitivity_attention_v1` 版本的 DSO operating-envelope actor。它补充前文规则，不取消 legacy baseline。
+
+### 20.1 Project mission
+
+本仓库当前 DSO agent 改造目标是：将 rule-based preferred-range generator 升级为
+ActionUnit x NetworkObject sensitivity-aware bipartite-attention DSO actor，同时保留
+`rule_v0`、legacy flat DSO observation、legacy DSO MLP actor、HAPPO/HATRPO/MATD3/HASAC 等 baseline。
+
+### 20.2 Non-negotiable boundaries
+
+1. FRObject / FR/DOE 仍是安全硬边界，神经网络不得直接替代 hard bounds。
+2. `dso_operating_envelope` 是调度引导，不是正式市场出清 award、结算结果或 bid quantity recommendation。
+3. 最终动作仍必须经过 DER bounds、FR/DOE projection、residual repair、AC replay/backoff 和 pandapower `runpp` 检查。
+4. DSO execution-time actor 不得读取 VPP 私有真实成本、用户舒适偏好、私有 SOC 内部细节或 oracle-only 字段。
+5. Centralized critic 可以使用 training-only privileged fields，但这些字段不能泄漏到 deployable actor observation。
+6. `sensitivity_attention_v1` 必须支持 variable ActionUnits 和 NetworkObjects，并正确处理 padding masks。
+7. 本版本不做区域划分，不新增 `zone_id` 到 v1 DSO actor schema 或 observation。
+8. 本版本不引入 `reliability` actor-observation 字段。
+9. Portfolio / DER fixed holding cost 只能进入 VPP/portfolio reward 或 privileged critic，不能作为 DSO execution actor 的私有成本输入。
+
+### 20.3 New architecture target
+
+`sensitivity_attention_v1` 由以下部件组成：
+
+- ActionUnit：DSO 下发 envelope guidance 的动作单元，默认 VPP-PCC 或 VPP-bus。
+- NetworkObject：当前关注的 bus、line 或 transformer token。
+- SensitivityEdgeTensor：`M_t[k, a, c]`，其中 `k` 是 NetworkObject，`a` 是 ActionUnit，`c` 是敏感度通道。
+- DSO actor：带 edge bias 的 bipartite attention，从 ActionUnit 关注 NetworkObject。
+- 输出头：每个 ActionUnit 输出 center `c`、width `w`、direction logits `sigma`、guidance strength `lambda`。
+- Safe decoder：把神经网络输出映射到 FR/DOE hard bounds 内。
+
+### 20.4 Required feature flags
+
+所有新行为必须由配置控制：
+
+```yaml
+dso:
+  envelope_policy: rule_v0 | sensitivity_attention_v1
+  observation_mode: legacy_flat | structured_bipartite
+  action_unit_granularity: vpp | vpp_pcc | vpp_bus | der
+  enable_q_channels: false
+  enable_rule_warmstart: true
+```
+
+默认保持 legacy baseline 可运行。任何 trainer 暂不支持 structured DSO actor 时，必须显式报错或文档说明，禁止 silent fallback。
+
+### 20.5 Implementation discipline
+
+- 不在旧 `_build_dso_operating_envelope()` 上硬改主逻辑；新增 versioned 模块并通过 adapter 路由。
+- canonical state objects 只保存最小状态；headroom、margin、severity、mask 等派生量放在 observation builder。
+- 每个 tensor-returning 函数必须说明 shape、dtype、mask 语义、padding 规则和 normalization。
+- 每个新 reward component 必须单独记录。
+- 每个新配置必须记录 seed 和 config hash。
+- 每次改造必须同步更新 `docs/dso_sensitivity_attention_upgrade_report.md` 和实验/曲线台账。

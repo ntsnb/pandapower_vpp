@@ -424,6 +424,19 @@ def _validate_dso_action(raw: Any, vpp_ids: list[str]) -> tuple[dict[str, Any], 
     if raw is None:
         return {}, issues
     if isinstance(raw, dict):
+        if "envelope_action" in raw:
+            envelope_action = raw.get("envelope_action")
+            if not isinstance(envelope_action, dict):
+                issues.append(
+                    ValidationIssue(
+                        level="error",
+                        agent_id="dso_global_guidance",
+                        field="envelope_action",
+                        message="DSO envelope_action must be a dict payload.",
+                    )
+                )
+                return {}, issues
+            return {"envelope_action": dict(envelope_action)}, issues
         target_source = raw.get("targets", raw)
         if not isinstance(target_source, dict):
             issues.append(
